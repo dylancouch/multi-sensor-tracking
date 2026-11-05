@@ -1,4 +1,4 @@
-"""Verify hand-counted IDF1 cases and frozen diagnostics reproduction output."""
+"""Verify hand-counted IDF1 cases and frozen diagnostic evidence."""
 
 from __future__ import annotations
 
@@ -74,8 +74,10 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="mst-diagnostics-") as temp:
             actual = canonical_json(run(Path(temp) / "evidence")) + "\n"
         if actual != expected:
-            raise AssertionError("diagnostics reproduction differs from frozen results.json")
-    print("diagnostics IDF1 vectors and reproducible evidence verified")
+            raise AssertionError(
+                "diagnostic reproduction differs from frozen results.json"
+            )
+    print("IDF1 vectors and reproducible diagnostic evidence verified")
 
 
 if __name__ == "__main__":

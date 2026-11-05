@@ -1,4 +1,4 @@
-"""Check deterministic association precision comparison data against frozen evidence."""
+"""Check deterministic sensor-order comparison data against frozen evidence."""
 
 from __future__ import annotations
 
@@ -50,11 +50,13 @@ def main() -> int:
             raise TypeError("evidence files must contain JSON objects")
         actual = projection(actual)
         if not _equal(expected, actual):
-            print("association evidence differs: protocol, source, tracks, or metrics changed")
+            print(
+                "sensor-order evidence differs: protocol, source, tracks, or metrics changed"
+            )
             return 1
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        parser.exit(2, f"association evidence verification: {exc}\n")
-    print(f"verified {len(actual['runs'])} deterministic association runs")
+        parser.exit(2, f"sensor-order evidence verification: {exc}\n")
+    print(f"verified {len(actual['runs'])} deterministic sensor-order runs")
     return 0
 
 

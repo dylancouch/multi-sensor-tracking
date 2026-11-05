@@ -1,4 +1,4 @@
-"""Reproduce diagnostics generated and truth-free recorded diagnostic evidence."""
+"""Reproduce generated and truth-free recorded diagnostic evidence."""
 
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     summary = run(args.output)
-    print(f"created {len(summary['runs'])} diagnostics runs in {args.output}")
+    print(f"created {len(summary['runs'])} diagnostic runs in {args.output}")
 
 
 if __name__ == "__main__":

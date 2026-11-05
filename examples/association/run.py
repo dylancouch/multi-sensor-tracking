@@ -1,4 +1,4 @@
-"""Reproduce the predeclared association comparison; never use truth for association."""
+"""Reproduce a predeclared association comparison without truth in tracking."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from mst.sensors import generate_observations
 from mst.simulation import generate_truth
 
 ROOT = Path(__file__).resolve().parents[2]
-PROTOCOL = Path(__file__).with_name("protocol.json")
+PROTOCOL = Path(__file__).with_name("direction-cost-protocol.json")
 METRICS = (
     "id_switches",
     "coverage",
