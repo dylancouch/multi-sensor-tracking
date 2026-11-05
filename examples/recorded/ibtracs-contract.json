@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source_id": "ibtracs_laura_2020",
+  "source_kind": "recorded",
+  "measurement_type": "cartesian_position_2d",
+  "input_format": "csv",
+  "sensor_id": "ibtracs_analysis",
+  "time": {"field": "timestamp_s", "unit": "s", "basis": "elapsed", "origin_s": 0},
+  "position": {"x_field": "x_m", "y_field": "y_m", "unit": "m", "frame": "world"},
+  "uncertainty": {"kind": "isotropic_std", "std": 20000, "unit": "m"}
+}

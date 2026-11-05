@@ -17,7 +17,7 @@ from mst import __version__
 from mst.artifacts import create_run
 from mst.association import track_multiple_objects
 from mst.evaluation import read_truth, report
-from mst.innovations import write_innovations
+from mst.innovations import Innovation, write_innovations
 from mst.observation_io import read_observations, write_tracks
 from mst.schema import Scenario, SchemaError, canonical_json, read_json
 from mst.tracking import track_single_object
@@ -144,7 +144,9 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                 truth = read_truth(run_dir / "truth.jsonl")
                 for method in methods:
                     start = time.perf_counter()
-                    innovations = [] if method != "baseline" else None
+                    innovations: list[Innovation] | None = (
+                        [] if method != "baseline" else None
+                    )
                     if method == "multi-kalman":
                         estimates = track_multiple_objects(
                             observations,

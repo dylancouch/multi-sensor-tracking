@@ -99,7 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingestion.add_argument("--format", choices=("csv", "jsonl"), required=True)
     ingestion.add_argument(
-        "--source-label", required=True, help="source provenance identifier"
+        "--source-label",
+        help="source provenance identifier; required without --contract",
+    )
+    ingestion.add_argument(
+        "--contract", type=Path, help="version 1 Cartesian CSV source contract JSON"
     )
     ingestion.add_argument("--sensor-id", help="CSV sensor identifier")
     ingestion.add_argument(
@@ -189,6 +193,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             records = read_tracks(args.input)
             print(f"valid tracks: {len(records)} estimates")
         elif args.command == "ingest":
+            if args.contract is None and args.source_label is None:
+                raise SchemaError("ingest requires --source-label without --contract")
             count, source_path = ingest(
                 args.input,
                 args.output,
@@ -196,6 +202,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_label=args.source_label,
                 sensor_id=args.sensor_id,
                 position_std_m=args.position_std_m,
+                contract_path=args.contract,
             )
             print(f"created {args.output}: {count} observations; source {source_path}")
         elif args.command == "evaluate":

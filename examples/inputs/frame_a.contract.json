@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source_id": "frame_a_fixture",
+  "source_kind": "generated",
+  "measurement_type": "cartesian_position_2d",
+  "input_format": "csv",
+  "sensor_id": "sensor_a",
+  "time": {"field": "timestamp", "unit": "s", "basis": "elapsed", "origin_s": 0},
+  "position": {"x_field": "x", "y_field": "y", "unit": "m", "frame": "sensor_a_local"},
+  "transform": {"target_frame": "world", "rotation": [[1, 0], [0, 1]], "translation_m": [10, 20]},
+  "uncertainty": {"kind": "isotropic_std", "std": 1, "unit": "m"}
+}

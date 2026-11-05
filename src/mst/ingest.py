@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import TextIO, cast
 
+from .input_contract import InputContract
 from .schema import (
     MAX_JSONL_BYTES,
     Observation,
@@ -60,28 +61,65 @@ def _jsonl_records(stream: TextIO):
             raise SchemaError(f"JSONL line {line_number}: {exc}") from exc
 
 
+def _contract_csv_records(stream: TextIO, contract: InputContract):
+    reader = csv.DictReader(stream)
+    if reader.fieldnames is None or len(reader.fieldnames) != len(
+        set(reader.fieldnames)
+    ):
+        raise SchemaError("CSV header must contain unique field names")
+    if set(contract.fields) != set(reader.fieldnames):
+        raise SchemaError("CSV header must contain exactly the input contract fields")
+    for line_number, row in enumerate(reader, 2):
+        if None in row or any(value is None for value in row.values()):
+            raise SchemaError(f"CSV line {line_number}: invalid column count")
+        try:
+            yield contract.convert(
+                float(row[contract.fields[0]]),
+                row[contract.fields[1]],
+                float(row[contract.fields[2]]),
+                float(row[contract.fields[3]]),
+            )
+        except (ValueError, SchemaError) as exc:
+            raise SchemaError(f"CSV line {line_number}: {exc}") from exc
+
+
 def ingest(
     input_path: Path | None,
     output_path: Path,
     *,
     format: str,
-    source_label: str,
+    source_label: str | None,
     sensor_id: str | None = None,
     position_std_m: float | None = None,
+    contract_path: Path | None = None,
 ) -> tuple[int, Path]:
     """Consume to EOF, emitting canonical JSONL and a source/assumption manifest.
 
     None input means stdin, which can be an ongoing sensor feed. Input must
-    already use world-frame meters and nonnegative seconds; no frame inference.
+    already use world-frame meters and nonnegative seconds unless an explicit
+    versioned CSV input contract supplies their conversion.
     """
     if format not in ("csv", "jsonl"):
         raise SchemaError("format must be csv or jsonl")
+    contract = None
+    contract_sha256 = None
+    if contract_path is not None:
+        if format != "csv" or sensor_id is not None or position_std_m is not None:
+            raise SchemaError(
+                "CSV input contract replaces --sensor-id and --position-std-m"
+            )
+        raw = contract_path.read_bytes()
+        contract_sha256 = hashlib.sha256(raw).hexdigest()
+        contract = InputContract.from_dict(parse_json(raw.decode("utf-8")))
+        if source_label is not None and source_label != contract.source_id:
+            raise SchemaError("source_label must equal input contract source_id")
+        source_label = contract.source_id
     _name(source_label, "source_label")
-    if format == "csv":
+    if format == "csv" and contract is None:
         if sensor_id is None or position_std_m is None:
             raise SchemaError("CSV requires sensor_id and position_std_m")
         _name(sensor_id, "sensor_id")
-    elif sensor_id is not None or position_std_m is not None:
+    elif format == "jsonl" and (sensor_id is not None or position_std_m is not None):
         raise SchemaError("JSONL carries sensor IDs and covariance; omit CSV options")
     provenance_path = output_path.with_name(output_path.stem + ".source.json")
     if input_path is not None and input_path.resolve() in (
@@ -89,8 +127,17 @@ def ingest(
         provenance_path.resolve(),
     ):
         raise SchemaError("input and output paths must differ")
+    if contract_path is not None and contract_path.resolve() in (
+        output_path.resolve(),
+        provenance_path.resolve(),
+    ):
+        raise SchemaError("contract and output paths must differ")
     if output_path.exists() or provenance_path.exists():
         raise FileExistsError("output or source manifest already exists")
+    input_sha256 = None
+    if contract is not None and input_path is not None:
+        with input_path.open("rb") as source:
+            input_sha256 = hashlib.file_digest(source, "sha256").hexdigest()
     count = 0
     size = 0
     digest = hashlib.sha256()
@@ -104,11 +151,14 @@ def ingest(
     try:
         with output_path.open("x", encoding="utf-8") as output:
             created_output = True
-            records = (
-                _csv_records(stream, cast(str, sensor_id), cast(float, position_std_m))
-                if format == "csv"
-                else _jsonl_records(stream)
-            )
+            if contract is not None:
+                records = _contract_csv_records(stream, contract)
+            elif format == "csv":
+                records = _csv_records(
+                    stream, cast(str, sensor_id), cast(float, position_std_m)
+                )
+            else:
+                records = _jsonl_records(stream)
             for record in records:
                 if record.timestamp_s < last_time:
                     raise SchemaError("timestamps must be nondecreasing")
@@ -125,21 +175,34 @@ def ingest(
                 digest.update(data)
                 count += 1
         provenance = {
-            "schema_version": 1,
-            "source_kind": "live" if input_path is None else "recorded",
+            "schema_version": 2 if contract is not None else 1,
+            "source_kind": contract.raw["source_kind"]
+            if contract is not None
+            else ("live" if input_path is None else "recorded"),
             "source_label": source_label,
             "input_format": format,
-            "sensor_id": sensor_id,
+            "sensor_id": contract.sensor_id if contract is not None else sensor_id,
             "position_std_m": position_std_m,
             "frame": "world",
             "position_unit": "m",
             "time_unit": "s",
             "observation_count": count,
             "observation_sha256": digest.hexdigest(),
-            "covariance_assumption": "isotropic, fixed"
-            if format == "csv"
-            else "per observation",
+            "covariance_assumption": contract.raw["uncertainty"]["kind"]
+            if contract is not None
+            else ("isotropic, fixed" if format == "csv" else "per observation"),
         }
+        if contract is not None:
+            provenance["input_contract"] = contract.raw
+            provenance["input_contract_sha256"] = contract_sha256
+            if input_path is not None:
+                with input_path.open("rb") as source:
+                    final_input_sha256 = hashlib.file_digest(
+                        source, "sha256"
+                    ).hexdigest()
+                if input_sha256 != final_input_sha256:
+                    raise SchemaError("input file changed during ingestion")
+                provenance["input_sha256"] = input_sha256
         with provenance_path.open("x", encoding="utf-8") as output:
             created_provenance = True
             json.dump(provenance, output, sort_keys=True, separators=(",", ":"))
