@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "frame": "world",
+  "position_unit": "m",
+  "velocity_unit": "m/s",
+  "time_unit": "s",
+  "duration_s": 4.0,
+  "step_s": 1.0,
+  "objects": [
+    {"object_id": "object-a", "initial_state": [0.0, 0.0, 1.0, 0.25]}
+  ],
+  "sensors": [
+    {"sensor_id": "sensor-a", "sample_interval_s": 1.0, "noise_std_m": 0.0},
+    {"sensor_id": "sensor-b", "sample_interval_s": 1.0, "noise_std_m": 0.0}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "question": "How do one-object baseline and Kalman estimates compare, and how do multi-object fusion and controlled sensor degradations affect synthetic tracking?",
+  "seeds": [101, 102, 103],
+  "matching_gate_m": 10.0,
+  "tracker": {
+    "acceleration_std_mps2": 1.0,
+    "initial_velocity_std_mps": 10.0,
+    "gate_squared": 9.21,
+    "min_hits": 2,
+    "max_missed": 2
+  },
+  "cases": [
+    {"name": "sanity", "config": "sanity.json", "methods": ["baseline", "kalman"]},
+    {"name": "one-object", "config": "one-object.json", "methods": ["baseline", "kalman"]},
+    {"name": "routine-low-only", "config": "demo.json", "methods": ["multi-kalman"], "sensors": ["sensor-low-noise"]},
+    {"name": "routine-high-only", "config": "demo.json", "methods": ["multi-kalman"], "sensors": ["sensor-high-noise"]},
+    {"name": "routine-fused", "config": "demo.json", "methods": ["multi-kalman"]},
+    {"name": "crossing", "config": "crossing.json", "methods": ["multi-kalman"]},
+    {"name": "noise-high", "config": "demo.json", "methods": ["multi-kalman"], "sensor_overrides": {"sensor-high-noise": {"noise_std_m": 1.6}}},
+    {"name": "miss-high", "config": "demo.json", "methods": ["multi-kalman"], "sensor_overrides": {"sensor-high-noise": {"miss_probability": 0.3}}},
+    {"name": "false-high", "config": "demo.json", "methods": ["multi-kalman"], "sensor_overrides": {"sensor-high-noise": {"false_alarm_probability": 0.5}}},
+    {"name": "offset-high", "config": "demo.json", "methods": ["multi-kalman"], "sensor_overrides": {"sensor-high-noise": {"timestamp_offset_s": 0.25}}},
+    {"name": "combined-degraded", "config": "degraded.json", "methods": ["multi-kalman"]}
+  ]
+}

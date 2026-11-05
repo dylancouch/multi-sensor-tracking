@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=75,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-sensor-tracking"
+version = "0.6.0"
+description = "Multi-sensor tracking and estimation toolkit"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2"]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.10,<4"]
+
+[project.scripts]
+mst = "mst.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mst*"]
+
+[tool.setuptools.package-dir]
+"" = "src"

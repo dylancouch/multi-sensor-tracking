@@ -1,0 +1,10 @@
+{"frame":"world","object_id":"object-a","position_unit":"m","schema_version":1,"state":[0.0,0.0,1.0,0.25],"timestamp_s":0.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-b","position_unit":"m","schema_version":1,"state":[8.0,2.0,-0.5,0.5],"timestamp_s":0.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-a","position_unit":"m","schema_version":1,"state":[1.0,0.25,1.0,0.25],"timestamp_s":1.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-b","position_unit":"m","schema_version":1,"state":[7.5,2.5,-0.5,0.5],"timestamp_s":1.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-a","position_unit":"m","schema_version":1,"state":[2.0,0.5,1.0,0.25],"timestamp_s":2.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-b","position_unit":"m","schema_version":1,"state":[7.0,3.0,-0.5,0.5],"timestamp_s":2.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-a","position_unit":"m","schema_version":1,"state":[3.0,0.75,1.0,0.25],"timestamp_s":3.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-b","position_unit":"m","schema_version":1,"state":[6.5,3.5,-0.5,0.5],"timestamp_s":3.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-a","position_unit":"m","schema_version":1,"state":[4.0,1.0,1.0,0.25],"timestamp_s":4.0,"velocity_unit":"m/s"}
+{"frame":"world","object_id":"object-b","position_unit":"m","schema_version":1,"state":[6.0,4.0,-0.5,0.5],"timestamp_s":4.0,"velocity_unit":"m/s"}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "frame": "world",
+  "position_unit": "m",
+  "velocity_unit": "m/s",
+  "time_unit": "s",
+  "duration_s": 4.0,
+  "step_s": 1.0,
+  "objects": [
+    {"object_id": "object-a", "initial_state": [0.0, 0.0, 1.0, 0.25]},
+    {"object_id": "object-b", "initial_state": [8.0, 2.0, -0.5, 0.5]}
+  ],
+  "sensors": [
+    {"sensor_id": "sensor-low-noise", "sample_interval_s": 1.0, "noise_std_m": 0.2},
+    {
+      "sensor_id": "sensor-high-noise",
+      "sample_interval_s": 2.0,
+      "noise_std_m": 1.2,
+      "miss_probability": 0.3,
+      "false_alarm_probability": 0.5,
+      "false_alarm_bounds_m": [-2.0, -2.0, 10.0, 6.0],
+      "timestamp_offset_s": 0.25
+    }
+  ]
+}

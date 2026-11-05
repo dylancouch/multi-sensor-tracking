@@ -1,0 +1,54 @@
+# Evaluation protocol — mandatory
+
+## Scientific rules
+
+- Declare scenario families, seeds, train/tuning/evaluation separation (if parameters are tuned), and metrics before running headline benchmarks. No selecting only favorable random seeds.
+- Keep model/tracker tuning separate from frozen final comparison scenarios; no using truth labels for online association.
+- Always evaluate at comparable time points and apply documented track-to-truth matching, including penalties for unmatched tracks/objects.
+- Report arithmetic mean and spread across seeds, not only a showcase run. Include the scenario generation configuration and source revision in reports.
+- State the data source and reference quality for each result. Generated-fixture results do not establish performance on recorded or live data; results without suitable reference truth cannot report truth-based accuracy metrics.
+
+## Core metrics
+
+1. Position RMSE in meters on matched states, with coverage (fraction of truth states matched) reported alongside it. RMSE alone can improve by discarding difficult tracks.
+2. Position MAE or median position error (meters), alongside RMSE.
+3. Track identity stability: ID switches counted under an explicit truth-to-estimate matching convention.
+4. Missed/false tracks or unmatched truth/estimate counts per scenario; define whether per-frame or track-level.
+5. State uncertainty: NEES where full state truth and covariance are valid; NIS where innovation statistics are available. Report finite-sample limitations and reject singular/invalid covariance as appropriate.
+6. Runtime measurement (wall time, machine details), with separate simulation/tracking/evaluation costs.
+
+Optional later: CLEAR MOT metrics or HOTA via a vetted reference library, provided definitions and dependencies are documented. Do not implement named metrics from memory without checking definitions and test vectors.
+
+## Benchmarks
+
+- **Sanity:** no noise, one object, known constant velocity and aligned observations. Check reconstructed positions, covariance behavior and units.
+- **Routine:** two or more objects, two independent position sensors, configurable independent noise and timing.
+- **Crossing:** two objects cross paths without sharing identities; explicitly quantify any ID switches.
+- **Degraded:** one sensor has missed observations, false alarms, temporal misalignment, and increased noise; include at least a single-parameter sweep per variable and a combined stress case.
+- **Reproducibility:** same scenario and seed produces byte-for-byte equivalent canonical output or numerically identical arrays with explicitly documented floating-point tolerance; different seeds produce meaningfully different observations.
+
+## Experimental fairness
+
+The baseline and Kalman tracker receive identical tracker-facing observations and comparable initialization rules. Tune on development scenarios; freeze parameters before evaluating held-out seeds. Compare computational costs honestly. Never use privileged simulator state to initialize a tracker unless both methods receive the same clearly disclosed oracle initialization and results are labeled oracle-assisted.
+
+## Reporting template
+
+Document: question, data source and provenance, generation process when applicable, reference-truth quality, methods/configs, predeclared metrics, number of repetitions, aggregate results (with spread), notable failure cases, reproduction commands, known limitations and supported conclusions. Avoid calling a model 'robust' without defined perturbation levels and results.
+
+## Implemented version 1 scoring and experiment protocol
+
+`mst evaluate --run RUN --tracks TRACKS --output metrics.json` first validates the run manifest, truth, and observations, then reads the independently generated track file. Only this evaluation command and `examples/benchmark/run.py` read truth. A report records scenario, observation, and track hashes; package version; source revision and dirty state when available; seed; dependency/Python/machine architecture versions; and the evaluation wall time. The standalone CLI does not know simulation or tracking wall times and records them as `null`. The experiment runner measures those phases separately.
+
+At each exact truth timestamp, scoring takes the final non-deleted estimate for each track ID at that timestamp. Estimates reported at other timestamps are counted as unscored, with no interpolation or hindsight prediction. It sorts truth object IDs and track IDs, uses minimum-total-distance assignment with a maximum distance of 10 meters by default, and favors the maximum number of gated matches. Matched planar Euclidean errors yield position RMSE and median position error in meters. Coverage is matched truth states divided by all truth states. Unmatched truth and estimate counts are **per truth frame**, not unique trajectory counts. Tentative and confirmed tracks both count as estimates; deleted tracks do not.
+
+An ID switch is counted when an object's assigned tracker ID differs from its previous matched frame, including across an unmatched gap. NEES uses the full four-state error and a positive-definite estimate covariance; singular covariances are skipped and counted. Baseline covariance is heuristic, so baseline NEES is unavailable. NIS is unavailable because innovation statistics are not yet persisted. These conventions are implemented in `mst/evaluation.py` and exercised by hand-computed tests.
+
+`examples/benchmark/protocol.json` freezes methods, tracker parameters, the evaluation gate, scenario variants, and evaluation seeds 101, 102, 103. No parameters were tuned on these seeds; development fixtures used other seeds. The runner compares baseline and Kalman on identical one-object observations, compares individual sensors with fused observations on the same routine truth, and varies one high-noise sensor's noise, miss probability, false-alarm probability, and timestamp offset separately against the routine-fused reference. It also runs a crossing case and a combined degradation. Aggregates are arithmetic means and sample standard deviations across seeds. Runtime varies by machine and load; deterministic output applies to simulation/metrics, not wall times.
+
+Reproduce with:
+
+```bash
+.venv/bin/python -m examples.benchmark.run --output output/benchmark-reproduction
+```
+
+The output directory must be new. Results in `examples/benchmark/` are generated by that script and include exact per-seed data and limitations; no field-performance inference is supported.
