@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 
+from .events import AssociationEvent, event
 from .innovations import Innovation
 from .schema import VERSION, Observation, SchemaError, TrackEstimate, canonical_json
 from .tracking import H, _kalman_update, process_covariance, transition
@@ -26,6 +27,7 @@ class _Track:
     timestamp_s: float
     hits: int = 1
     missed: int = 0
+    confirmed: bool = False
 
 
 def _distance_squared(track: _Track, observation: Observation) -> float:
@@ -77,6 +79,7 @@ def track_multiple_objects(
     min_hits: int = 2,
     max_missed: int = 2,
     innovations: list[Innovation] | None = None,
+    events: list[AssociationEvent] | None = None,
 ) -> list[TrackEstimate]:
     """Assign per sensor and timestamp with a global minimum-cost matching.
 
@@ -152,6 +155,7 @@ def track_multiple_objects(
                 ) * gate_squared + 1
                 finite_costs = np.where(costs <= gate_squared, costs, invalid_cost)
                 rows, columns = linear_sum_assignment(finite_costs)
+                accepted: set[tuple[int, int]] = set()
                 for row, column in zip(rows, columns, strict=True):
                     if costs[row, column] > gate_squared:
                         continue
@@ -167,6 +171,40 @@ def track_multiple_objects(
                     track.hits += 1
                     matched_ids.add(track.track_id)
                     matched_observations.add(int(column))
+                    accepted.add((int(row), int(column)))
+                    if events is not None:
+                        events.append(
+                            event(
+                                timestamp,
+                                "match",
+                                track.track_id,
+                                observation=observation,
+                                distance_squared=float(costs[row, column]),
+                                gate_squared=gate_squared,
+                                reason="accepted",
+                            )
+                        )
+                if events is not None:
+                    for candidate_index, track in enumerate(candidates):
+                        for observation_index, observation in enumerate(
+                            sensor_observations
+                        ):
+                            if (candidate_index, observation_index) in accepted:
+                                continue
+                            score = float(costs[candidate_index, observation_index])
+                            events.append(
+                                event(
+                                    timestamp,
+                                    "rejected",
+                                    track.track_id,
+                                    observation=observation,
+                                    distance_squared=score,
+                                    gate_squared=gate_squared,
+                                    reason="gated"
+                                    if score > gate_squared
+                                    else "assigned_elsewhere",
+                                )
+                            )
             for observation_index, observation in enumerate(sensor_observations):
                 if observation_index not in matched_observations:
                     track = _new_track(
@@ -175,6 +213,16 @@ def track_multiple_objects(
                     next_serial += 1
                     tracks.append(track)
                     matched_ids.add(track.track_id)
+                    if events is not None:
+                        events.append(
+                            event(
+                                timestamp,
+                                "birth",
+                                track.track_id,
+                                observation=observation,
+                                reason="unmatched",
+                            )
+                        )
         retained: list[_Track] = []
         for track in sorted(tracks, key=lambda item: item.track_id):
             if track.track_id not in matched_ids:
@@ -185,8 +233,17 @@ def track_multiple_objects(
                 lifecycle = "deleted"
             elif track.hits >= min_hits:
                 lifecycle = "confirmed"
+                if not track.confirmed and events is not None:
+                    events.append(
+                        event(timestamp, "confirm", track.track_id, reason="confirmed")
+                    )
+                track.confirmed = True
             else:
                 lifecycle = "tentative"
+            if lifecycle == "deleted" and events is not None:
+                events.append(
+                    event(timestamp, "delete", track.track_id, reason="missed")
+                )
             estimates.append(_estimate(track, lifecycle, config_id))
             if lifecycle != "deleted":
                 retained.append(track)

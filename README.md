@@ -26,15 +26,18 @@ python3 -m venv .venv
 .venv/bin/mst validate --run output/demo
 ```
 
-`output/demo` must be new. If it already exists, choose another name such as `output/demo-2`. The demo writes a manifest, separate `truth.jsonl` and `observations.jsonl`, `tracks.jsonl`, `innovations.jsonl`, `metrics.json`, and optionally `plot.png`. The tracker receives observations only; truth is read afterward for scoring and plotting. To use a different scenario:
+`output/demo` must be new. If it already exists, choose another name such as `output/demo-2`. The demo writes a manifest, separate `truth.jsonl` and `observations.jsonl`, `tracks.jsonl`, `innovations.jsonl`, `events.jsonl`, `metrics.json`, and an interactive `inspect.html`; `plot.png` is optional. Open `inspect.html` in a browser to scrub time, filter sensors and tracks, inspect association decisions and covariance, and optionally show reference truth. The tracker receives observations only; truth is read afterward for scoring and visualization. To use a different scenario:
 
 ```bash
 .venv/bin/mst simulate --config examples/scenarios/degraded.json --output output/degraded --seed 7
-.venv/bin/mst track --input output/degraded/observations.jsonl --output output/degraded/tracks.jsonl --innovations output/degraded/innovations.jsonl --method multi-kalman
+.venv/bin/mst track --input output/degraded/observations.jsonl --output output/degraded/tracks.jsonl --innovations output/degraded/innovations.jsonl --events output/degraded/events.jsonl --method multi-kalman
 .venv/bin/mst evaluate --run output/degraded --tracks output/degraded/tracks.jsonl --innovations output/degraded/innovations.jsonl --output output/degraded/metrics.json
+.venv/bin/mst inspect --observations output/degraded/observations.jsonl --tracks output/degraded/tracks.jsonl --events output/degraded/events.jsonl --innovations output/degraded/innovations.jsonl --output output/degraded/inspect.html
 ```
 
 `mst --help` lists all commands. `mst track` also supports `baseline` and `kalman` for the one-object scenario. It needs only an observation file, not the run manifest or truth file. Outputs are created exclusively, so commands do not silently replace files.
+
+`mst inspect` needs only observation and track files. Its `--events` and `--innovations` inputs are optional; omit them when unavailable. Pass `--truth PATH/TO/truth.jsonl` to add an initially hidden reference overlay, position-error chart, and reference-based ID-switch events. Those are computed for viewing after tracking with exact-time, distance-gated matching (default 10 m). They do not enter the tracker. The HTML file is self-contained and requires no server or plotting extra; its contents include the supplied observations, tracks, and optional reference data, so handle reports from sensitive sources according to their data permissions. Static PNG/SVG plots remain available through `mst plot` for generated runs.
 
 ## Use recorded or live observations
 

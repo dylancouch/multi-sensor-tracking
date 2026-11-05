@@ -29,3 +29,6 @@ include = ["mst*"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+mst = ["inspection_template.html"]

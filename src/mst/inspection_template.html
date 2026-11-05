@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Tracking run inspection</title>
+  <style>
+    :root { font: 15px/1.45 system-ui, sans-serif; color: #182634; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { padding: 1.2rem max(1.2rem, calc((100vw - 1400px)/2)); background: #10243a; color: white; }
+    h1 { font-size: 1.35rem; margin: 0; }
+    h2 { font-size: 1.05rem; margin: 0 0 .65rem; }
+    .sub { color: #bad0e2; margin: .25rem 0 0; }
+    main { max-width: 1440px; margin: auto; padding: 1.2rem; display: grid; gap: 1rem; }
+    .card { background: white; border: 1px solid #d9e0e7; border-radius: .6rem; padding: 1rem; box-shadow: 0 2px 8px #172a3d0b; min-width: 0; }
+    .grid { display: grid; grid-template-columns: minmax(400px, 2fr) minmax(280px, 1fr); gap: 1rem; }
+    .controls { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    button { border: 1px solid #b7c8d8; background: #eaf2f8; color: #173451; padding: .38rem .7rem; border-radius: .35rem; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid #087bb0; outline-offset: 2px; }
+    #timeline { flex: 1; min-width: 180px; accent-color: #087bb0; }
+    #timeLabel { font-variant-numeric: tabular-nums; min-width: 7rem; font-weight: 650; }
+    .filters { display: flex; flex-wrap: wrap; gap: .25rem .85rem; max-height: 10rem; overflow: auto; }
+    .filters label { white-space: nowrap; }
+    .filterGroup { margin: .7rem 0 0; }
+    .filterGroup strong { display: block; margin-bottom: .25rem; }
+    svg { width: 100%; background: #fbfcfd; border: 1px solid #dce5ec; border-radius: .4rem; }
+    #map { aspect-ratio: 1.45; }
+    #diagnostic { height: 260px; }
+    .legend { color: #506476; display: flex; flex-wrap: wrap; gap: .8rem; font-size: .84rem; margin-top: .45rem; }
+    .swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; vertical-align: middle; margin-right: .2rem; }
+    .scroll { max-height: 430px; overflow: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+    th, td { text-align: left; padding: .32rem .45rem; border-bottom: 1px solid #e8edf1; vertical-align: top; }
+    th { position: sticky; top: 0; background: white; color: #506476; }
+    td { overflow-wrap: anywhere; }
+    .muted { color: #627484; }
+    .notice { padding: .6rem .8rem; background: #edf5fb; border-left: 3px solid #2287b5; margin-bottom: .7rem; }
+    @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><h1>Tracking run inspection</h1><p class="sub">World coordinates in meters · local, self-contained report</p></header>
+  <main>
+    <section class="card">
+      <div class="controls">
+        <button id="previous" type="button" aria-label="Previous timestamp">◀</button>
+        <input id="timeline" type="range" min="0" max="0" value="0" aria-label="Timeline timestamp">
+        <button id="next" type="button" aria-label="Next timestamp">▶</button>
+        <span id="timeLabel"></span>
+        <label id="truthControl"><input id="showTruth" type="checkbox"> Show reference truth</label>
+      </div>
+      <div class="filterGroup"><strong>Sensors</strong><div id="sensorFilters" class="filters"></div></div>
+      <div class="filterGroup"><strong>Tracks</strong><div id="trackFilters" class="filters"></div></div>
+    </section>
+    <div class="grid">
+      <section class="card">
+        <h2>Trajectories at the selected time</h2>
+        <svg id="map" viewBox="0 0 900 620" role="img" aria-label="Observations, track positions, covariance regions, and optional reference trajectories"></svg>
+        <div class="legend"><span>× observations, colored by sensor</span><span>● estimates and nominal 95% covariance, colored by track</span><span><span class="swatch" style="background:#557b50"></span> optional reference</span></div>
+      </section>
+      <section class="card">
+        <h2>Current frame</h2>
+        <div id="frameSummary" class="notice"></div>
+        <div class="scroll"><table><thead><tr><th>Kind</th><th>ID</th><th>Position or status</th></tr></thead><tbody id="frameRows"></tbody></table></div>
+      </section>
+    </div>
+    <div class="grid">
+      <section class="card"><h2>Innovation and reference error</h2><svg id="diagnostic" viewBox="0 0 900 260" role="img" aria-label="NIS and optional position error over time"></svg><p id="diagnosticNote" class="muted"></p></section>
+      <section class="card"><h2>Association decisions</h2><p id="eventNote" class="muted"></p><div class="scroll"><table><thead><tr><th>Decision</th><th>Track</th><th>Observation</th><th>Gate score</th></tr></thead><tbody id="eventRows"></tbody></table></div></section>
+    </div>
+  </main>
+  <script type="application/json" id="runData">__MST_INSPECTION_DATA__</script>
+  <script>
+    'use strict';
+    const data = JSON.parse(document.getElementById('runData').textContent);
+    const ns = 'http://www.w3.org/2000/svg';
+    const timeline = document.getElementById('timeline');
+    const times = data.timestamps_s;
+    const sensorVisible = new Set(data.sensors);
+    const trackVisible = new Set(data.track_ids);
+    const palette = ['#a43f28','#9b4b9c','#a06a0a','#3568a8','#9b345d','#507b2f','#6d56ad','#a65331'];
+    const sensorPalette = ['#087c9a','#2878b4','#008c7b','#466a9d','#66802e','#7b65a3'];
+    function colorFor(id, colors) { let hash=0; for (const char of id) hash=(hash*31+char.codePointAt(0))>>>0; return colors[hash%colors.length]; }
+    timeline.max = Math.max(0, times.length - 1);
+    document.getElementById('truthControl').hidden = data.truth === null;
+    function svgNode(tag, attrs, parent) {
+      const node = document.createElementNS(ns, tag);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+      parent.appendChild(node); return node;
+    }
+    function cell(row, value) { const node = document.createElement('td'); node.textContent = String(value); row.appendChild(node); }
+    function addFilters(hostId, names, visible) {
+      const host = document.getElementById(hostId);
+      if (!names.length) { host.textContent = 'None'; return; }
+      for (const name of names) {
+        const label = document.createElement('label'); const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox'; checkbox.checked = true;
+        checkbox.addEventListener('change', () => { if (checkbox.checked) visible.add(name); else visible.delete(name); render(); });
+        label.append(checkbox, document.createTextNode(' ' + name)); host.appendChild(label);
+      }
+    }
+    addFilters('sensorFilters', data.sensors, sensorVisible);
+    addFilters('trackFilters', data.track_ids, trackVisible);
+    const trackHistories = new Map();
+    for (const t of data.tracks) {
+      if (!trackHistories.has(t.track_id)) trackHistories.set(t.track_id, new Map());
+      trackHistories.get(t.track_id).set(t.timestamp_s, t);
+    }
+    const truthHistories = new Map();
+    for (const t of data.truth || []) {
+      if (!truthHistories.has(t.object_id)) truthHistories.set(t.object_id, []);
+      truthHistories.get(t.object_id).push(t);
+    }
+    let scale = 1, centerX = 0, centerY = 0;
+    let boundsTruthMode = null;
+    const px = x => 450 + (x - centerX) * scale;
+    const py = y => 310 - (y - centerY) * scale;
+    function updateBounds() {
+      const showTruth = Boolean(data.truth && document.getElementById('showTruth').checked);
+      if (boundsTruthMode === showTruth) return;
+      boundsTruthMode = showTruth;
+      let lowX = 0, highX = 1, lowY = 0, highY = 1;
+      const add = p => { lowX=Math.min(lowX,p[0]); highX=Math.max(highX,p[0]); lowY=Math.min(lowY,p[1]); highY=Math.max(highY,p[1]); };
+      for (const o of data.observations) add(o.position_m);
+      for (const t of data.tracks) add(t.state);
+      if (showTruth) for (const t of data.truth) add(t.state);
+      const pad = Math.max(highX-lowX, highY-lowY, 1) * .1;
+      centerX=(lowX+highX)/2; centerY=(lowY+highY)/2;
+      scale=Math.min(820/(highX-lowX+2*pad),540/(highY-lowY+2*pad));
+    }
+    function ellipse(svg, track) {
+      const a = track.covariance[0][0], b = (track.covariance[0][1] + track.covariance[1][0]) / 2, d = track.covariance[1][1];
+      const delta = Math.sqrt(Math.max(0, (a-d)*(a-d) + 4*b*b));
+      const major = Math.max(0, (a+d+delta)/2), minor = Math.max(0, (a+d-delta)/2);
+      if (!(major > 0)) return;
+      const angle = .5 * Math.atan2(2*b, a-d) * 180 / Math.PI;
+      const cx = px(track.state[0]), cy = py(track.state[1]);
+      svgNode('ellipse', {cx, cy, rx:Math.sqrt(5.991464547*major)*scale, ry:Math.sqrt(5.991464547*minor)*scale, transform:`rotate(${-angle} ${cx} ${cy})`, fill:'none', stroke:colorFor(track.track_id,palette), 'stroke-opacity':'.48', 'stroke-width':'1.5'}, svg);
+    }
+    function finalTracksAt(time) {
+      const result=[];
+      for (const [id, history] of trackHistories) {
+        const t=history.get(time);
+        if (t && t.lifecycle !== 'deleted' && trackVisible.has(id)) result.push(t);
+      }
+      return result;
+    }
+    function renderMap(time, currentObservations, currentTracks) {
+      const svg = document.getElementById('map'); svg.replaceChildren();
+      for (let i=0; i<=8; i++) {
+        const x=40+i*102.5, y=40+i*67.5;
+        svgNode('line',{x1:x,y1:40,x2:x,y2:580,stroke:'#e7edf2'},svg);
+        svgNode('line',{x1:40,y1:y,x2:860,y2:y,stroke:'#e7edf2'},svg);
+        const xLabel=svgNode('text',{x:x-12,y:602,fill:'#667988','font-size':'11'},svg); xLabel.textContent=(centerX+(x-450)/scale).toFixed(1);
+        const yLabel=svgNode('text',{x:5,y:y+4,fill:'#667988','font-size':'11'},svg); yLabel.textContent=(centerY-(y-310)/scale).toFixed(1);
+      }
+      for (const [id, history] of trackHistories) {
+        if (!trackVisible.has(id)) continue;
+        const path = [...history.values()].filter(t => t.timestamp_s<=time && t.lifecycle !== 'deleted').sort((a,b)=>a.timestamp_s-b.timestamp_s);
+        if (path.length>1) svgNode('polyline',{points:path.map(t=>`${px(t.state[0])},${py(t.state[1])}`).join(' '),fill:'none',stroke:colorFor(id,palette),'stroke-opacity':'.7','stroke-width':'2'},svg);
+      }
+      if (data.truth && document.getElementById('showTruth').checked) {
+        for (const history of truthHistories.values()) {
+          const path = history.filter(t=>t.timestamp_s<=time).sort((a,b)=>a.timestamp_s-b.timestamp_s);
+          if (path.length>1) svgNode('polyline',{points:path.map(t=>`${px(t.state[0])},${py(t.state[1])}`).join(' '),fill:'none',stroke:'#557b50','stroke-width':'2'},svg);
+          const last=path.at(-1); if (last) svgNode('circle',{cx:px(last.state[0]),cy:py(last.state[1]),r:5,fill:'#557b50'},svg);
+        }
+      }
+      currentTracks.forEach((t,index) => { ellipse(svg,t); const x=px(t.state[0]), y=py(t.state[1]), color=colorFor(t.track_id,palette); svgNode('circle',{cx:x,cy:y,r:5,fill:color},svg); const label=svgNode('text',{x:x+8,y:y-8+(index%2)*22,fill:color,'font-size':'13'},svg); label.textContent=t.track_id; });
+      for (const o of currentObservations) { const x=px(o.position_m[0]), y=py(o.position_m[1]), color=colorFor(o.sensor_id,sensorPalette); svgNode('line',{x1:x-5,y1:y-5,x2:x+5,y2:y+5,stroke:color,'stroke-width':'2'},svg); svgNode('line',{x1:x-5,y1:y+5,x2:x+5,y2:y-5,stroke:color,'stroke-width':'2'},svg); }
+    }
+    function renderFrame(time, observations, tracks) {
+      const rows=document.getElementById('frameRows'); rows.replaceChildren();
+      const frameEvents=(data.events||[]).filter(e=>e.timestamp_s===time && trackVisible.has(e.track_id) && (e.sensor_id===null || sensorVisible.has(e.sensor_id)));
+      const frameInnovations=(data.innovations||[]).filter(i=>i.timestamp_s===time && trackVisible.has(i.track_id) && sensorVisible.has(i.sensor_id));
+      const deleted=[...trackHistories].map(([id,history])=>trackVisible.has(id)?history.get(time):null).filter(t=>t && t.lifecycle==='deleted');
+      const switches=data.truth && document.getElementById('showTruth').checked ? data.id_switches.filter(s=>s.timestamp_s===time).length : 0;
+      document.getElementById('frameSummary').textContent=`${observations.length} observations · ${tracks.length} active tracks · ${deleted.length} deleted · ${frameEvents.length} decisions · ${frameInnovations.length} innovations${switches ? ` · ${switches} reference ID switches` : ''}`;
+      for (const o of observations) { const r=document.createElement('tr'); cell(r,'Observation · '+o.sensor_id); cell(r,o.observation_id); cell(r,`${o.position_m[0].toFixed(2)}, ${o.position_m[1].toFixed(2)} m`); rows.appendChild(r); }
+      for (const t of [...tracks,...deleted]) { const r=document.createElement('tr'); cell(r,'Track · '+t.lifecycle); cell(r,t.track_id); cell(r,`${t.state[0].toFixed(2)}, ${t.state[1].toFixed(2)} m`); rows.appendChild(r); }
+      for (const i of frameInnovations) { const r=document.createElement('tr'); cell(r,'Innovation · '+i.sensor_id); cell(r,i.track_id+' / '+i.observation_id); cell(r,`residual ${i.residual_m[0].toFixed(2)}, ${i.residual_m[1].toFixed(2)} m · NIS ${i.nis===null?'unavailable':i.nis.toFixed(3)}`); rows.appendChild(r); }
+      if (data.truth && document.getElementById('showTruth').checked) for (const t of data.truth.filter(x=>x.timestamp_s===time)) { const r=document.createElement('tr'); cell(r,'Reference'); cell(r,t.object_id); cell(r,`${t.state[0].toFixed(2)}, ${t.state[1].toFixed(2)} m`); rows.appendChild(r); }
+      if (!rows.children.length) { const r=document.createElement('tr'); cell(r,'No records at this timestamp'); rows.appendChild(r); }
+    }
+    function renderEvents(time) {
+      const rows=document.getElementById('eventRows'); rows.replaceChildren();
+      const selected=(data.events||[]).filter(e=>e.timestamp_s===time && trackVisible.has(e.track_id) && (e.sensor_id===null || sensorVisible.has(e.sensor_id)));
+      document.getElementById('eventNote').textContent=data.events===null ? 'No association event artifact was supplied. Reference ID switches remain available when truth is shown.' : `${selected.length} decisions at ${time} s. Scores are squared Mahalanobis distances; accepted scores must be within the gate.`;
+      for (const e of selected) { const r=document.createElement('tr'); cell(r,e.kind+' · '+e.reason); cell(r,e.track_id); cell(r,e.observation_id||'—'); cell(r,e.distance_squared===null ? (e.reason==='gated' ? `∞ / ${e.gate_squared.toFixed(3)}` : '—') : `${e.distance_squared.toFixed(3)} / ${e.gate_squared.toFixed(3)}`); rows.appendChild(r); }
+      if (data.truth && document.getElementById('showTruth').checked) for (const e of data.id_switches.filter(x=>x.timestamp_s===time && trackVisible.has(x.track_id))) { const r=document.createElement('tr'); cell(r,'Reference ID switch'); cell(r,e.previous_track_id+' → '+e.track_id); cell(r,e.object_id); cell(r,'Evaluation only'); rows.appendChild(r); }
+    }
+    function chart(svg, values, top, title, maxTime, currentTime, color) {
+      const left=65, right=860, bottom=top+85; let maxY=1; for (const point of values) maxY=Math.max(maxY,point.value); maxY*=1.12;
+      const minTime=times[0]||0, duration=Math.max(maxTime-minTime,1e-9);
+      const x=t=>left+(t-minTime)/duration*(right-left), y=v=>bottom-v/maxY*65;
+      svgNode('line',{x1:left,y1:bottom,x2:right,y2:bottom,stroke:'#9eb1c0'},svg);
+      svgNode('line',{x1:left,y1:top+15,x2:left,y2:bottom,stroke:'#9eb1c0'},svg);
+      const label=svgNode('text',{x:left,y:top+12,fill:'#304b62','font-size':'15','font-weight':'600'},svg); label.textContent=title;
+      const maximum=svgNode('text',{x:5,y:top+24,fill:'#617484','font-size':'12'},svg); maximum.textContent=maxY.toFixed(1);
+      for (const point of values) svgNode('circle',{cx:x(point.timestamp_s),cy:y(point.value),r:point.timestamp_s===currentTime?5:3,fill:color,'fill-opacity':point.timestamp_s<=currentTime?'1':'.3'},svg);
+      svgNode('line',{x1:x(currentTime),y1:top+15,x2:x(currentTime),y2:bottom,stroke:'#193b58','stroke-dasharray':'4 4'},svg);
+    }
+    function renderDiagnostics(time) {
+      const svg=document.getElementById('diagnostic'); svg.replaceChildren();
+      const nis=(data.innovations||[]).filter(x=>x.nis!==null && trackVisible.has(x.track_id) && sensorVisible.has(x.sensor_id)).map(x=>({timestamp_s:x.timestamp_s,value:x.nis}));
+      const errors=data.truth && document.getElementById('showTruth').checked ? data.errors.filter(x=>trackVisible.has(x.track_id)).map(x=>({timestamp_s:x.timestamp_s,value:x.error_m})) : [];
+      chart(svg,nis,15,'NIS · accepted Kalman updates',times.at(-1)||0,time,'#1186aa');
+      chart(svg,errors,140,'Position error (m) · matched reference states',times.at(-1)||0,time,'#557b50');
+      const referenceNote=data.truth===null ? 'no truth file supplied' : document.getElementById('showTruth').checked ? `${errors.length} reference-matched errors` : 'reference diagnostics hidden';
+      document.getElementById('diagnosticNote').textContent=`${nis.length} finite NIS values${data.innovations===null?' (innovation artifact unavailable)':''}; ${referenceNote}. Reference matching uses exact timestamps and a ${data.matching_gate_m} m gate.`;
+    }
+    function render() {
+      const time=times[Number(timeline.value)];
+      document.getElementById('timeLabel').textContent=time===undefined?'No timestamps':`${time} s`;
+      if (time===undefined) {
+        timeline.disabled=true;
+        document.getElementById('previous').disabled=true;
+        document.getElementById('next').disabled=true;
+        document.getElementById('frameSummary').textContent='No observations or track estimates to inspect.';
+        document.getElementById('eventNote').textContent='No timestamps are available.';
+        document.getElementById('diagnosticNote').textContent='No diagnostics are available.';
+        return;
+      }
+      const observations=data.observations.filter(o=>o.timestamp_s===time && sensorVisible.has(o.sensor_id));
+      const tracks=finalTracksAt(time);
+      updateBounds();
+      renderMap(time,observations,tracks); renderFrame(time,observations,tracks); renderEvents(time); renderDiagnostics(time);
+    }
+    timeline.addEventListener('input',render);
+    document.getElementById('showTruth').addEventListener('change',render);
+    document.getElementById('previous').addEventListener('click',()=>{timeline.value=Math.max(0,Number(timeline.value)-1);render();});
+    document.getElementById('next').addEventListener('click',()=>{timeline.value=Math.min(times.length-1,Number(timeline.value)+1);render();});
+    render();
+  </script>
+</body>
+</html>

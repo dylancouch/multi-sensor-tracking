@@ -13,8 +13,10 @@ from . import __version__
 from .artifacts import create_run, validate_run
 from .association import track_multiple_objects
 from .evaluation import read_truth, report, write_report
+from .events import AssociationEvent, read_events, write_events
 from .ingest import ingest
 from .innovations import read_innovations, write_innovations
+from .inspection import write_inspection
 from .observation_io import read_observations, read_tracks, write_tracks
 from .schema import Scenario, SchemaError, read_json
 from .tracking import track_single_object
@@ -103,10 +105,13 @@ def build_parser() -> argparse.ArgumentParser:
     ingestion.add_argument(
         "--position-std-m", type=float, help="CSV isotropic position standard deviation"
     )
-    track = commands.add_parser("track", help="track one object from observations only")
+    track = commands.add_parser("track", help="track objects from observations only")
     track.add_argument("--input", required=True, type=Path, help="observations.jsonl")
     track.add_argument("--output", required=True, type=Path, help="new tracks.jsonl")
     track.add_argument("--innovations", type=Path, help="new Kalman innovations JSONL")
+    track.add_argument(
+        "--events", type=Path, help="new multi-object association events JSONL"
+    )
     track.add_argument(
         "--method", choices=("baseline", "kalman", "multi-kalman"), required=True
     )
@@ -157,6 +162,18 @@ def build_parser() -> argparse.ArgumentParser:
     plot.add_argument(
         "--output", required=True, type=Path, help="new .png or .svg file"
     )
+    inspect = commands.add_parser(
+        "inspect", help="build a self-contained interactive HTML timeline"
+    )
+    inspect.add_argument("--observations", required=True, type=Path)
+    inspect.add_argument("--tracks", required=True, type=Path)
+    inspect.add_argument("--events", type=Path)
+    inspect.add_argument("--innovations", type=Path)
+    inspect.add_argument(
+        "--truth", type=Path, help="optional scoring-only reference overlay"
+    )
+    inspect.add_argument("--gate-m", type=float, default=10.0)
+    inspect.add_argument("--output", required=True, type=Path, help="new .html file")
     return parser
 
 
@@ -218,13 +235,38 @@ def main(argv: Sequence[str] | None = None) -> int:
                 read_tracks(args.tracks),
             )
             print(f"created {args.output}")
+        elif args.command == "inspect":
+            write_inspection(
+                args.output,
+                read_observations(args.observations),
+                read_tracks(args.tracks),
+                events=read_events(args.events) if args.events else None,
+                innovations=read_innovations(args.innovations)
+                if args.innovations
+                else None,
+                truth=read_truth(args.truth) if args.truth else None,
+                gate_m=args.gate_m,
+            )
+            print(f"created {args.output}")
         elif args.command == "track":
             observations = read_observations(args.input)
             if args.method == "baseline" and args.innovations:
                 raise SchemaError("baseline has no Kalman innovations")
-            if args.innovations and (args.output.exists() or args.innovations.exists()):
-                raise FileExistsError("track or innovation output already exists")
+            if args.events and args.method != "multi-kalman":
+                raise SchemaError("association events require multi-kalman")
+            outputs = [
+                item
+                for item in (args.output, args.innovations, args.events)
+                if item is not None
+            ]
+            if len({item.resolve() for item in outputs}) != len(outputs) or any(
+                item.exists() for item in outputs
+            ):
+                raise FileExistsError(
+                    "track, innovation, and event outputs must be distinct new files"
+                )
             innovations = [] if args.innovations else None
+            events: list[AssociationEvent] | None = [] if args.events else None
             if args.method == "multi-kalman":
                 records = track_multiple_objects(
                     observations,
@@ -234,6 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     min_hits=args.min_hits,
                     max_missed=args.max_missed,
                     innovations=innovations,
+                    events=events,
                 )
             else:
                 records = track_single_object(
@@ -243,13 +286,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                     initial_velocity_std_mps=args.initial_velocity_std,
                     innovations=innovations,
                 )
-            write_tracks(args.output, records)
-            if args.innovations:
-                try:
+            written: list[Path] = []
+            try:
+                write_tracks(args.output, records)
+                written.append(args.output)
+                if args.innovations:
                     write_innovations(args.innovations, innovations or [])
-                except Exception:
-                    args.output.unlink(missing_ok=True)
-                    raise
+                    written.append(args.innovations)
+                if args.events:
+                    write_events(args.events, events or [])
+                    written.append(args.events)
+            except Exception:
+                for item in written:
+                    item.unlink(missing_ok=True)
+                raise
             print(f"created {args.output}: {len(records)} estimates")
         else:
             scenario = (
@@ -274,11 +324,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 tracking_start = time.perf_counter()
                 innovations = []
-                tracks = track_multiple_objects(observations, innovations=innovations)
+                events = []
+                tracks = track_multiple_objects(
+                    observations, innovations=innovations, events=events
+                )
                 track_path = args.output / "tracks.jsonl"
                 write_tracks(track_path, tracks)
                 innovation_path = args.output / "innovations.jsonl"
                 write_innovations(innovation_path, innovations)
+                write_events(args.output / "events.jsonl", events)
                 tracking_wall_s = time.perf_counter() - tracking_start
                 truth = read_truth(args.output / manifest.artifacts["truth"])
                 evaluation_start = time.perf_counter()
@@ -298,6 +352,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "evaluation_wall_s": evaluation_wall_s,
                 }
                 write_report(args.output / "metrics.json", value)
+                write_inspection(
+                    args.output / "inspect.html",
+                    observations,
+                    tracks,
+                    events=events,
+                    innovations=innovations,
+                    truth=truth,
+                )
                 if args.plot:
                     plot_run(args.output / "plot.png", truth, observations, tracks)
             print(
