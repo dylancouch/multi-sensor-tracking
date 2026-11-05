@@ -14,7 +14,8 @@ import scipy
 
 
 def source_state() -> dict[str, Any]:
-    root = Path(__file__).resolve().parents[1]
+    # The source package lives at repository_root/src/mst/.
+    root = Path(__file__).resolve().parents[2]
     if not (root / ".git").exists():
         return {"revision": None, "dirty": None}
     try:
