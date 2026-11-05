@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import groupby
 
 import numpy as np
@@ -28,6 +28,18 @@ class _Track:
     hits: int = 1
     missed: int = 0
     confirmed: bool = False
+
+
+@dataclass
+class AssociationState:
+    """Bounded by the caller's record limit when used for online tracking."""
+
+    tracks: list[_Track] = field(default_factory=list)
+    next_serial: int = 1
+    config_id: str | None = None
+    previous_time: float = -1.0
+    seen_ids: set[str] = field(default_factory=set)
+    dropped_track_limit: int = 0
 
 
 def _distance_squared(track: _Track, observation: Observation) -> float:
@@ -80,6 +92,8 @@ def track_multiple_objects(
     max_missed: int = 2,
     innovations: list[Innovation] | None = None,
     events: list[AssociationEvent] | None = None,
+    _state: AssociationState | None = None,
+    _max_live_tracks: int | None = None,
 ) -> list[TrackEstimate]:
     """Assign per sensor and timestamp with a global minimum-cost matching.
 
@@ -99,8 +113,12 @@ def track_multiple_objects(
         or max_missed < 0
     ):
         raise SchemaError("min_hits must be positive and max_missed nonnegative")
-    seen_ids: set[str] = set()
-    previous_time = -1.0
+    if _max_live_tracks is not None and (
+        type(_max_live_tracks) is not int or _max_live_tracks < 1
+    ):
+        raise SchemaError("max_live_tracks must be positive")
+    seen_ids: set[str] = _state.seen_ids if _state is not None else set()
+    previous_time = _state.previous_time if _state is not None else -1.0
     for observation in observations:
         Observation.from_dict(observation.to_dict())
         if observation.timestamp_s < previous_time:
@@ -120,9 +138,14 @@ def track_multiple_objects(
     config_id = (
         "cfg-" + hashlib.sha256(canonical_json(config).encode()).hexdigest()[:16]
     )
-    tracks: list[_Track] = []
+    if _state is not None:
+        if _state.config_id is None:
+            _state.config_id = config_id
+        elif _state.config_id != config_id:
+            raise SchemaError("association parameters changed during streaming")
+    tracks: list[_Track] = _state.tracks if _state is not None else []
     estimates: list[TrackEstimate] = []
-    next_serial = 1
+    next_serial = _state.next_serial if _state is not None else 1
     for timestamp, group in groupby(observations, key=lambda item: item.timestamp_s):
         epoch = list(group)
         for track in tracks:
@@ -207,6 +230,10 @@ def track_multiple_objects(
                             )
             for observation_index, observation in enumerate(sensor_observations):
                 if observation_index not in matched_observations:
+                    if _max_live_tracks is not None and len(tracks) >= _max_live_tracks:
+                        if _state is not None:
+                            _state.dropped_track_limit += 1
+                        continue
                     track = _new_track(
                         observation, next_serial, initial_velocity_std_mps
                     )
@@ -248,4 +275,8 @@ def track_multiple_objects(
             if lifecycle != "deleted":
                 retained.append(track)
         tracks = retained
+    if _state is not None:
+        _state.tracks = tracks
+        _state.next_serial = next_serial
+        _state.previous_time = previous_time
     return estimates

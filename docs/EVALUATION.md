@@ -16,6 +16,8 @@ Maintain an evidence coverage matrix with one row per evaluated source and colum
 
 input contracts intake examples have source records in `examples/inputs/README.md` (two generated local-frame fixtures) and `examples/recorded/README.md` (NOAA IBTrACS 2020 Laura recipe). These demonstrate conversion and provenance only. The IBTrACS best-track points are used as observations with assumed uncertainty; no independent reference truth or real-data accuracy claim is available for that example.
 
+streaming provides a small recorded Laura replay fixture and source sidecar in `examples/recorded/`. Byte-identical batch and online track files establish that the two processing paths agree for the same ordered observations. This is a reproducibility check, not an independent truth-based performance result. A stream's inferred missing sensor epochs depend on an explicitly supplied nominal cadence; they are not detection-miss metrics. Dropped-record counters describe intake quality, not accuracy.
+
 Predeclare source selection, splits or seeds, and metrics before comparisons. Report results per source and domain before any aggregate; pool only sources whose metric definitions, reference quality, and evaluation conditions are comparable, and state the weighting. Report truth-free diagnostics separately from reference-based accuracy. Claim generality only over the domains, measurement types, and source conditions actually evaluated. Use generated fixtures for controlled tests and recorded or live evidence for external validity when permitted and suitable; neither substitutes for the other.
 
 ## Core metrics

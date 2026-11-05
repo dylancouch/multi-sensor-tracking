@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_label": "live_example",
+  "source_kind": "live",
+  "domain": "user_supplied_cartesian_positions",
+  "measurement_type": "cartesian_position_2d",
+  "input_format": "jsonl",
+  "frame": "world",
+  "position_unit": "m",
+  "time_unit": "s",
+  "uncertainty": "per observation covariance in square meters",
+  "provenance": "example template; replace with actual source and permitted-use details before processing real data",
+  "reference_quality": "none supplied",
+  "permitted_use": "local demonstration only"
+}

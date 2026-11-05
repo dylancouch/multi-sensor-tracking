@@ -18,6 +18,7 @@ from .ingest import ingest
 from .innovations import read_innovations, write_innovations
 from .inspection import write_inspection
 from .observation_io import read_observations, read_tracks, write_tracks
+from .online import track_stream
 from .schema import Scenario, SchemaError, read_json
 from .tracking import track_single_object
 from .visualization import plot_run
@@ -138,6 +139,21 @@ def build_parser() -> argparse.ArgumentParser:
     track.add_argument(
         "--max-missed", type=int, default=2, help="missed epochs before deletion"
     )
+    stream_track = commands.add_parser(
+        "track-stream", help="track JSONL as it arrives and flush completed epochs"
+    )
+    stream_track.add_argument("--input", type=Path, help="replay file; omit for stdin")
+    stream_track.add_argument(
+        "--source", required=True, type=Path, help="source record JSON"
+    )
+    stream_track.add_argument(
+        "--output", required=True, type=Path, help="new tracks JSONL"
+    )
+    stream_track.add_argument("--max-lateness-s", type=float, default=0.0)
+    stream_track.add_argument("--max-buffered", type=int, default=4096)
+    stream_track.add_argument("--max-records", type=int, default=100_000)
+    stream_track.add_argument("--max-live-tracks", type=int, default=2048)
+    stream_track.add_argument("--expected-interval-s", type=float)
     validate_tracks = commands.add_parser(
         "validate-tracks", help="validate track estimate JSONL"
     )
@@ -205,6 +221,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 contract_path=args.contract,
             )
             print(f"created {args.output}: {count} observations; source {source_path}")
+        elif args.command == "track-stream":
+            count, summary_path = track_stream(
+                args.input,
+                args.output,
+                args.source,
+                max_lateness_s=args.max_lateness_s,
+                max_buffered=args.max_buffered,
+                max_records=args.max_records,
+                max_live_tracks=args.max_live_tracks,
+                expected_interval_s=args.expected_interval_s,
+            )
+            print(f"created {args.output}: {count} estimates; stream {summary_path}")
         elif args.command == "evaluate":
             start = time.perf_counter()
             manifest = validate_run(args.run)
