@@ -1,4 +1,6 @@
-# association crossing-association experiment (negative result)
+# Association experiments
+
+The [precision-first follow-up](sensor-order.md) uses a new held-out split and reports a narrow crossing improvement alongside a substantial false-alarm regression. The direction-cost study below remains part of the record as a negative result.
 
 ## Frozen question and method
 
@@ -21,7 +23,7 @@ Crossing switches by seed 201–205 were `[4, 0, 4, 4, 4]` for both methods. Deg
 
 The recorded NOAA IBTrACS Laura source has eight observations and no independent reference. Each variant produced one track, one birth, seven matches, seven usable NIS samples, and mean NIS 0.00000573. These are truth-free processing diagnostics, not identity or accuracy results. The source is a single sampled storm trajectory, so it cannot test multi-object association.
 
-The direction penalty adds O(tracks × observations) work per sensor epoch and keeps the same Hungarian assignment complexity. On this Linux x86_64, Python 3.15.0, NumPy 2.5.4, SciPy 1.18.1 run, tracking took roughly 2–3 ms per generated case. Timings include Python overhead and vary by machine and load; use the generated JSON for exact per-run timings. The short crossing puts objects nearly at the same position and the 10 m evaluation gate assigns identities by instantaneous distance. Some scorer ID changes at the overlap may therefore reflect ambiguous reference matching as well as tracker decisions. association remains open pending a better justified intervention and a newly frozen, unseen evaluation split.
+The direction penalty adds O(tracks × observations) work per sensor epoch and keeps the same Hungarian assignment complexity. On this Linux x86_64, Python 3.15.0, NumPy 2.5.4, SciPy 1.18.1 run, tracking took roughly 2–3 ms per generated case. Timings include Python overhead and vary by machine and load; use the generated JSON for exact per-run timings. The short crossing puts objects nearly at the same position and the 10 m evaluation gate assigns identities by instantaneous distance. Some scorer ID changes at the overlap may therefore reflect ambiguous reference matching as well as tracker decisions. This first experiment left association open; the follow-up uses a newly frozen evaluation split.
 
 ## Reproduce
 

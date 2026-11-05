@@ -82,6 +82,7 @@ class OnlineTracker:
         max_live_tracks: int = 2048,
         expected_interval_s: float | None = None,
         direction_weight: float = 0.0,
+        sensor_order: str = "id",
     ) -> None:
         if not math.isfinite(max_lateness_s) or max_lateness_s < 0:
             raise SchemaError("max_lateness_s must be finite and nonnegative")
@@ -102,6 +103,9 @@ class OnlineTracker:
         if not math.isfinite(direction_weight) or not 0 <= direction_weight <= 1e9:
             raise SchemaError("direction_weight must be finite and in [0, 1e9]")
         self.direction_weight = direction_weight
+        if sensor_order not in ("id", "precision"):
+            raise SchemaError("sensor_order must be id or precision")
+        self.sensor_order = sensor_order
         self.state = AssociationState()
         self.pending: list[tuple[float, str, str, Observation]] = []
         self.pending_ids: set[str] = set()
@@ -183,6 +187,7 @@ class OnlineTracker:
                 _state=self.state,
                 _max_live_tracks=self.max_live_tracks,
                 direction_weight=self.direction_weight,
+                sensor_order=self.sensor_order,
             )
             self.processed += len(epoch)
             self.emitted_estimates += len(estimates)
@@ -221,6 +226,7 @@ class OnlineTracker:
             "max_live_tracks": self.max_live_tracks,
             "expected_interval_s": self.expected_interval_s,
             "direction_weight": self.direction_weight,
+            "sensor_order": self.sensor_order,
         }
 
 
@@ -235,6 +241,7 @@ def track_stream(
     max_live_tracks: int = 2048,
     expected_interval_s: float | None = None,
     direction_weight: float = 0.0,
+    sensor_order: str = "id",
     input_stream: TextIO | None = None,
 ) -> tuple[int, Path]:
     """Write and flush estimates per completed epoch; no reference data is read."""
@@ -254,6 +261,7 @@ def track_stream(
         max_live_tracks=max_live_tracks,
         expected_interval_s=expected_interval_s,
         direction_weight=direction_weight,
+        sensor_order=sensor_order,
     )
     stream = (
         input_path.open("r", encoding="utf-8")

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "question": "Does processing the lower-uncertainty sensor first reduce crossing identity changes, and what does it cost under false alarms and degradation?",
+  "development_seeds": [7, 8, 9, 10, 11, 12, 101, 102, 103],
+  "held_out_seeds": [301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320],
+  "matching_gate_m": 10.0,
+  "tracker": {
+    "acceleration_std_mps2": 1.0,
+    "initial_velocity_std_mps": 10.0,
+    "gate_squared": 9.21,
+    "min_hits": 2,
+    "max_missed": 2
+  },
+  "methods": {
+    "baseline": {"sensor_order": "id"},
+    "precision_first": {"sensor_order": "precision"}
+  },
+  "generated_cases": [
+    {"name": "crossing", "config": "crossing.json"},
+    {"name": "routine", "config": "demo.json"},
+    {"name": "false-high", "config": "demo.json", "sensor_overrides": {"sensor-high-noise": {"false_alarm_probability": 0.5}}},
+    {"name": "degraded", "config": "degraded.json"}
+  ],
+  "recorded_source": "examples/recorded/laura-2020.jsonl",
+  "primary_metric": "crossing ID switches under exact-time 10 m matching; lower is better",
+  "secondary_metrics": ["coverage", "position_rmse_m", "unmatched_truth_states", "unmatched_estimate_states", "nees_mean", "nis_mean", "mota", "tracking_wall_s"],
+  "recorded_metrics": ["births", "matches", "confirmed_tracks", "track_count", "nis_mean", "tracking_wall_s"],
+  "comparison_policy": "Both methods receive identical observations and parameters except sensor order. Per-source per-seed and arithmetic mean/sample standard deviation; no pooling across cases. Recorded Laura lacks independent truth and receives only truth-free diagnostics. Runtime descriptive. The crossing ID-switch metric is ambiguous at near-coincident truth positions and must be interpreted alongside continuity diagnostics."
+}

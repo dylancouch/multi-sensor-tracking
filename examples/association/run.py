@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import statistics
@@ -31,6 +32,7 @@ METRICS = (
     "nees_mean",
     "nis_mean",
     "nis_samples",
+    "mota",
 )
 
 
@@ -56,16 +58,52 @@ def _diagnostics(
     }
 
 
-def run() -> dict[str, Any]:
-    protocol = read_json(PROTOCOL)
-    assert isinstance(protocol, dict)
+def _track_hash(estimates: list[TrackEstimate]) -> str:
+    return hashlib.sha256(
+        "".join(canonical_json(item.to_dict()) + "\n" for item in estimates).encode()
+    ).hexdigest()
+
+
+def run(protocol_path: Path = PROTOCOL) -> dict[str, Any]:
+    protocol = read_json(protocol_path)
+    if not isinstance(protocol, dict):
+        raise SchemaError("association protocol must be an object")
     tracker = protocol["tracker"]
-    weight = protocol["variant"]["direction_weight"]
+    methods = protocol.get("methods")
+    if methods is None:
+        weight = protocol["variant"]["direction_weight"]
+        methods = {
+            "baseline": {"direction_weight": 0.0},
+            "direction": {"direction_weight": weight},
+        }
+    if not isinstance(methods, dict) or not methods:
+        raise SchemaError("methods must be a nonempty object")
+    if any(
+        not isinstance(name, str) or not isinstance(value, dict)
+        for name, value in methods.items()
+    ):
+        raise SchemaError("methods must map names to parameter objects")
     runs: list[dict[str, Any]] = []
     for case in protocol["generated_cases"]:
+        if Path(case["config"]).name != case["config"]:
+            raise SchemaError("scenario config must be a filename")
         scenario_path = ROOT / "examples/scenarios" / case["config"]
         scenario_data = scenario_path.read_bytes()
-        scenario = Scenario.from_dict(read_json(scenario_path))
+        scenario_value = copy.deepcopy(read_json(scenario_path))
+        if not isinstance(scenario_value, dict):
+            raise SchemaError("scenario must be an object")
+        overrides = case.get("sensor_overrides", {})
+        if not isinstance(overrides, dict):
+            raise SchemaError("sensor_overrides must be an object")
+        sensor_ids = {sensor["sensor_id"] for sensor in scenario_value["sensors"]}
+        if not set(overrides) <= sensor_ids:
+            raise SchemaError("sensor override references an unknown sensor")
+        for sensor in scenario_value["sensors"]:
+            sensor.update(overrides.get(sensor["sensor_id"], {}))
+        scenario = Scenario.from_dict(scenario_value)
+        scenario_hash = hashlib.sha256(
+            canonical_json(scenario_value).encode()
+        ).hexdigest()
         truth = generate_truth(scenario)
         for seed in protocol["held_out_seeds"]:
             observations = generate_observations(scenario, truth, seed)
@@ -74,13 +112,13 @@ def run() -> dict[str, Any]:
                     canonical_json(item.to_dict()) + "\n" for item in observations
                 ).encode()
             ).hexdigest()
-            for method, direction_weight in (("baseline", 0.0), ("direction", weight)):
+            for method, parameters in methods.items():
                 innovations: list[Innovation] = []
                 start = time.perf_counter()
                 estimates = track_multiple_objects(
                     observations,
                     **tracker,
-                    direction_weight=direction_weight,
+                    **parameters,
                     innovations=innovations,
                 )
                 elapsed = time.perf_counter() - start
@@ -97,9 +135,13 @@ def run() -> dict[str, Any]:
                         "source_kind": "generated",
                         "seed": seed,
                         "method": method,
-                        "scenario_sha256": hashlib.sha256(scenario_data).hexdigest(),
+                        "scenario_sha256": scenario_hash,
+                        "scenario_file_sha256": hashlib.sha256(
+                            scenario_data
+                        ).hexdigest(),
                         "observation_sha256": observation_hash,
                         "config_id": estimates[0].config_id,
+                        "track_sha256": _track_hash(estimates),
                         "metrics": {key: metrics[key] for key in METRICS},
                         "tracking_wall_s": elapsed,
                     }
@@ -113,14 +155,14 @@ def run() -> dict[str, Any]:
     if source_record.get("observation_sha256") != source_hash:
         raise SchemaError("recorded observations do not match the source record")
     observations = read_observations(recorded_path)
-    for method, direction_weight in (("baseline", 0.0), ("direction", weight)):
+    for method, parameters in methods.items():
         innovations = []
         events: list[AssociationEvent] = []
         start = time.perf_counter()
         estimates = track_multiple_objects(
             observations,
             **tracker,
-            direction_weight=direction_weight,
+            **parameters,
             innovations=innovations,
             events=events,
         )
@@ -135,6 +177,7 @@ def run() -> dict[str, Any]:
                     source_path.read_bytes()
                 ).hexdigest(),
                 "config_id": estimates[0].config_id,
+                "track_sha256": _track_hash(estimates),
                 "diagnostics": _diagnostics(events, estimates),
                 "nis_mean": statistics.fmean(
                     item.nis for item in innovations if item.nis is not None
@@ -147,7 +190,7 @@ def run() -> dict[str, Any]:
         )
     summary = []
     for source in dict.fromkeys(item["source"] for item in runs):
-        for method in ("baseline", "direction"):
+        for method in methods:
             selected = [
                 item
                 for item in runs
@@ -180,7 +223,7 @@ def run() -> dict[str, Any]:
                 }
             )
     return {
-        "protocol_sha256": hashlib.sha256(PROTOCOL.read_bytes()).hexdigest(),
+        "protocol_sha256": hashlib.sha256(protocol_path.read_bytes()).hexdigest(),
         "source_state": source_state(),
         "environment": environment_versions(),
         "runs": runs,
@@ -191,8 +234,9 @@ def run() -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--protocol", type=Path, default=PROTOCOL)
     args = parser.parse_args()
-    result = run()
+    result = run(args.protocol)
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, sort_keys=True, indent=2, allow_nan=False)
         stream.write("\n")

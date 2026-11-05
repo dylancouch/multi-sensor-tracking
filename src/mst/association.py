@@ -118,6 +118,7 @@ def track_multiple_objects(
     min_hits: int = 2,
     max_missed: int = 2,
     direction_weight: float = 0.0,
+    sensor_order: str = "id",
     innovations: list[Innovation] | None = None,
     events: list[AssociationEvent] | None = None,
     _state: AssociationState | None = None,
@@ -136,6 +137,8 @@ def track_multiple_objects(
         raise SchemaError("gate_squared must be finite and in (0, 1e9]")
     if not math.isfinite(direction_weight) or not 0 <= direction_weight <= 1e9:
         raise SchemaError("direction_weight must be finite and in [0, 1e9]")
+    if sensor_order not in ("id", "precision"):
+        raise SchemaError("sensor_order must be id or precision")
     if (
         type(min_hits) is not int
         or min_hits < 1
@@ -158,7 +161,7 @@ def track_multiple_objects(
         seen_ids.add(observation.observation_id)
         previous_time = observation.timestamp_s
 
-    config = {
+    config: dict[str, float | int | str] = {
         "acceleration_std_mps2": acceleration_std_mps2,
         "initial_velocity_std_mps": initial_velocity_std_mps,
         "gate_squared": gate_squared,
@@ -167,6 +170,8 @@ def track_multiple_objects(
     }
     if direction_weight:
         config["direction_weight"] = direction_weight
+    if sensor_order != "id":
+        config["sensor_order"] = sensor_order
     config_id = (
         "cfg-" + hashlib.sha256(canonical_json(config).encode()).hexdigest()[:16]
     )
@@ -189,7 +194,23 @@ def track_multiple_objects(
             )
             track.timestamp_s = timestamp
         matched_ids: set[str] = set()
-        for sensor_id in sorted({item.sensor_id for item in epoch}):
+        sensor_ids = {item.sensor_id for item in epoch}
+        if sensor_order == "precision":
+            order = sorted(
+                sensor_ids,
+                key=lambda sensor_id: (
+                    sum(
+                        item.covariance_m2[0][0] + item.covariance_m2[1][1]
+                        for item in epoch
+                        if item.sensor_id == sensor_id
+                    )
+                    / sum(item.sensor_id == sensor_id for item in epoch),
+                    sensor_id,
+                ),
+            )
+        else:
+            order = sorted(sensor_ids)
+        for sensor_id in order:
             sensor_observations = sorted(
                 (item for item in epoch if item.sensor_id == sensor_id),
                 key=lambda item: item.observation_id,
