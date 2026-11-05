@@ -262,12 +262,12 @@ def markdown_summary(value: dict[str, Any]) -> str:
         "",
         "Values show arithmetic mean ± sample standard deviation across seeds. RMSE and MOTP are conditional on matched states; coverage and unmatched counts must be read alongside them. NIS uses saved Kalman update innovations and is unavailable for the baseline. Runtime includes artifact writing for simulation and tracking, and report construction for evaluation. These generated-fixture results do not establish field performance.",
         "",
-        "| Case | Method | n | RMSE (m) | Coverage | ID switches | Unmatched truth | Unmatched estimates |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Case | Method | n | RMSE (m) | Coverage | MOTA | MOTP (m) | NIS | ID switches | Unmatched truth | Unmatched estimates |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in value["summary"]:
         lines.append(
-            f"| {item['case']} | {item['method']} | {item['repetitions']} | {_cell(item['position_rmse_m'])} | {_cell(item['coverage'])} | {_cell(item['id_switches'])} | {_cell(item['unmatched_truth_states'])} | {_cell(item['unmatched_estimate_states'])} |"
+            f"| {item['case']} | {item['method']} | {item['repetitions']} | {_cell(item['position_rmse_m'])} | {_cell(item['coverage'])} | {_cell(item['mota'])} | {_cell(item['motp_m'])} | {_cell(item['nis_mean'])} | {_cell(item['id_switches'])} | {_cell(item['unmatched_truth_states'])} | {_cell(item['unmatched_estimate_states'])} |"
         )
     lines.extend(
         [
