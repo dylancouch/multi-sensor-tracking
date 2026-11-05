@@ -272,7 +272,7 @@ def markdown_summary(value: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Full per-seed metrics, timings, hashes, and environment details are in `benchmark.json`.",
+            "Full per-seed metrics, timings, hashes, and environment details are in `benchmark.json` (`results.json` in the checked-in report).",
             "",
         ]
     )
