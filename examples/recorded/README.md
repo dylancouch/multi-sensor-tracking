@@ -36,3 +36,20 @@ cmp output/laura-batch.jsonl output/laura-stream.jsonl
 ```
 
 The replay is byte-identical to batch for this ordered eight-record fixture. The `.stream.json` sidecar embeds the recorded source manifest and reports zero inferred missing sensor epochs and zero dropped records for this input. The comparison establishes processing equivalence on these observations, not tracking accuracy on the cyclone.
+
+## FHWA NGSIM Peachtree traffic slice
+
+The [U.S. DOT NGSIM trajectory dataset](https://catalog.data.gov/dataset/next-generation-simulation-ngsim-vehicle-trajectories-and-supporting-data) provides video-derived road vehicle positions. `ngsim-peachtree.jsonl` is a 155-observation, 31-frame excerpt from the Peachtree location, with five moving vehicles. It is a **recorded traffic observation fixture**, distinct from the NOAA cyclone example. The [source sidecar](ngsim-peachtree.source.json) records selection, transform, uncertainty assumption, provenance, SHA-256, reference quality, and use limits. Derived trajectory data are attributed to U.S. DOT/FHWA NGSIM and shared under the dataset's [CC BY-SA 3.0 terms](https://creativecommons.org/licenses/by-sa/3.0/); the project's code license does not relicense these data.
+
+The public API's `local_x`/`local_y` are feet in the Peachtree local frame. The converter scales both axes by 0.3048 and keeps the local orientation as the tracker's `world` frame. It assigns relative seconds from frame 3370 at the documented 10 Hz cadence. The API's `global_time` values do not unambiguously identify UTC milliseconds in this excerpt, so they are checked for frame consistency but not used as absolute timestamps. The fixed 0.75 m standard deviation is illustrative, not a calibrated measurement error. Original vehicle IDs select a stable slice but never enter tracker observations as truth IDs. There is no independently measured reference; misses, false tracks, identity changes, position error, NEES, and IDF1 are unavailable. NIS and track counts remain available as truth-free diagnostics.
+
+To regenerate from the selected public API response (a change to the selected rows fails the pinned hash check):
+
+```bash
+.venv/bin/python -m examples.recorded.prepare_ngsim --download \
+  --expected-sha256 ad884c11302d5ba876be95e3574d89ea86d1c896b786398b4ce9c093e44eb5dd \
+  --output output/ngsim-peachtree.jsonl \
+  --source-record output/ngsim-peachtree.source.json
+```
+
+To analyze the bundled fixture, first run `mst track --input examples/recorded/ngsim-peachtree.jsonl --method multi-kalman --output output/ngsim-tracks.jsonl --innovations output/ngsim-innovations.jsonl`, then run `mst diagnose --observations examples/recorded/ngsim-peachtree.jsonl --source examples/recorded/ngsim-peachtree.source.json --tracks output/ngsim-tracks.jsonl --innovations output/ngsim-innovations.jsonl --report output/ngsim-diagnostics.json --output output/ngsim-diagnostics.png`. Paths must be new.

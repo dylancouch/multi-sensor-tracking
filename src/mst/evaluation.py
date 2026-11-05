@@ -53,6 +53,77 @@ def read_truth(path: Path) -> list[Truth]:
     return records
 
 
+def identity_metrics(
+    truth: list[Truth], estimates: list[TrackEstimate], *, gate_m: float = 10.0
+) -> dict[str, int | float]:
+    """Planar IDF1 with a single global truth-to-track assignment.
+
+    Potential identity matches are exact-time pairs inside the distance gate.
+    Only final non-deleted states at truth timestamps count as detections.
+    This keeps the input and timing policy aligned with ``score`` while the
+    sequence-global identity pairing follows the ID metrics convention.
+    """
+    if not math.isfinite(gate_m) or not 0 < gate_m <= 1e6:
+        raise SchemaError("gate_m must be finite and in (0, 1e6]")
+    if not truth:
+        raise SchemaError("cannot score an empty truth dataset")
+    truth_by_time: dict[float, list[Truth]] = defaultdict(list)
+    seen_truth: set[tuple[float, str]] = set()
+    for truth_item in truth:
+        Truth.from_dict(truth_item.to_dict())
+        key = (truth_item.timestamp_s, truth_item.object_id)
+        if key in seen_truth:
+            raise SchemaError("duplicate truth timestamp/object_id")
+        seen_truth.add(key)
+        truth_by_time[truth_item.timestamp_s].append(truth_item)
+    final_estimate: dict[tuple[float, str], TrackEstimate] = {}
+    for estimate_item in estimates:
+        TrackEstimate.from_dict(estimate_item.to_dict())
+        final_estimate[(estimate_item.timestamp_s, estimate_item.track_id)] = (
+            estimate_item
+        )
+    live_by_time: dict[float, list[TrackEstimate]] = defaultdict(list)
+    for (timestamp, _), estimate_item in final_estimate.items():
+        if timestamp in truth_by_time and estimate_item.lifecycle != "deleted":
+            live_by_time[timestamp].append(estimate_item)
+    truth_ids = sorted({item.object_id for item in truth})
+    track_ids = sorted(
+        {item.track_id for frame in live_by_time.values() for item in frame}
+    )
+    potential = np.zeros((len(truth_ids), len(track_ids)), dtype=np.int64)
+    truth_index = {item: index for index, item in enumerate(truth_ids)}
+    track_index = {item: index for index, item in enumerate(track_ids)}
+    for timestamp, truth_frame in truth_by_time.items():
+        for actual in truth_frame:
+            for estimate in live_by_time[timestamp]:
+                if (
+                    math.hypot(
+                        actual.state[0] - estimate.state[0],
+                        actual.state[1] - estimate.state[1],
+                    )
+                    <= gate_m
+                ):
+                    potential[
+                        truth_index[actual.object_id], track_index[estimate.track_id]
+                    ] += 1
+    idtp = 0
+    if potential.size:
+        rows, columns = linear_sum_assignment(-potential)
+        idtp = int(potential[rows, columns].sum())
+    truth_detections = len(truth)
+    tracker_detections = sum(len(frame) for frame in live_by_time.values())
+    idfn = truth_detections - idtp
+    idfp = tracker_detections - idtp
+    return {
+        "idtp": idtp,
+        "idfp": idfp,
+        "idfn": idfn,
+        "id_precision": idtp / tracker_detections if tracker_detections else 0.0,
+        "id_recall": idtp / truth_detections,
+        "idf1": 2 * idtp / (truth_detections + tracker_detections),
+    }
+
+
 def score(
     truth: list[Truth],
     estimates: list[TrackEstimate],

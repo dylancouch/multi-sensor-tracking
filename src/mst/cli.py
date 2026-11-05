@@ -12,13 +12,19 @@ from pathlib import Path
 from . import __version__
 from .artifacts import create_run, validate_run
 from .association import track_multiple_objects
+from .diagnostics import (
+    attach_hashes,
+    diagnostic_report,
+    plot_diagnostics,
+    write_diagnostic_report,
+)
 from .evaluation import read_truth, report, write_report
 from .events import AssociationEvent, read_events, write_events
 from .ingest import ingest
 from .innovations import read_innovations, write_innovations
 from .inspection import write_inspection
 from .observation_io import read_observations, read_tracks, write_tracks
-from .online import track_stream
+from .online import _source_record, track_stream
 from .schema import Scenario, SchemaError, read_json
 from .tracking import track_single_object
 from .visualization import plot_run
@@ -190,6 +196,20 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--gate-m", type=float, default=10.0, help="maximum match distance in meters"
     )
+    diagnose = commands.add_parser(
+        "diagnose", help="write per-epoch diagnostic JSON and six-panel plot"
+    )
+    diagnostic_input = diagnose.add_mutually_exclusive_group(required=True)
+    diagnostic_input.add_argument("--run", type=Path, help="validated generated run")
+    diagnostic_input.add_argument(
+        "--observations", type=Path, help="recorded observations"
+    )
+    diagnose.add_argument("--source", type=Path, help="recorded source sidecar")
+    diagnose.add_argument("--tracks", required=True, type=Path)
+    diagnose.add_argument("--innovations", type=Path)
+    diagnose.add_argument("--gate-m", type=float, default=10.0)
+    diagnose.add_argument("--report", required=True, type=Path, help="new JSON file")
+    diagnose.add_argument("--output", required=True, type=Path, help="new PNG or SVG")
     plot = commands.add_parser(
         "plot", help="render a headless trajectory and uncertainty plot"
     )
@@ -279,6 +299,77 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 f"evaluated {metrics['matched_states']}/{metrics['truth_states']} truth states; RMSE={metrics['position_rmse_m']} m"
             )
+        elif args.command == "diagnose":
+            if args.run is not None:
+                if args.source is not None:
+                    raise SchemaError("--source requires --observations")
+                manifest = validate_run(args.run)
+                observation_path = args.run / manifest.artifacts["observations"]
+                truth_path = args.run / manifest.artifacts["truth"]
+                source_path = None
+                source_label = f"generated-seed-{manifest.seed}"
+                truth = read_truth(truth_path)
+            else:
+                if args.source is None:
+                    raise SchemaError("recorded diagnostics require --source")
+                observation_path = args.observations
+                assert observation_path is not None
+                source_path = args.source
+                source_record = _source_record(source_path, observation_path)
+                if (
+                    source_record["source_kind"] != "recorded"
+                    or source_record.get("observation_sha256") is None
+                ):
+                    raise SchemaError(
+                        "recorded diagnostics require a recorded source with an observation hash"
+                    )
+                source_label = source_record["source_label"]
+                truth_path = None
+                truth = None
+            input_paths = [
+                observation_path,
+                args.tracks,
+                truth_path,
+                args.innovations,
+                source_path,
+            ]
+            outputs = [args.report, args.output]
+            if (
+                len({path.resolve() for path in outputs}) != len(outputs)
+                or any(path.exists() for path in outputs)
+                or any(
+                    path.resolve()
+                    in {item.resolve() for item in input_paths if item is not None}
+                    for path in outputs
+                )
+            ):
+                raise FileExistsError("diagnostic outputs must be distinct new files")
+            value = diagnostic_report(
+                read_observations(observation_path),
+                read_tracks(args.tracks),
+                truth=truth,
+                innovations=read_innovations(args.innovations)
+                if args.innovations
+                else None,
+                gate_m=args.gate_m,
+            )
+            value["source_label"] = source_label
+            attach_hashes(
+                value,
+                observation_path=observation_path,
+                track_path=args.tracks,
+                truth_path=truth_path,
+                innovation_path=args.innovations,
+                source_path=source_path,
+            )
+            try:
+                plot_diagnostics(args.output, value)
+                write_diagnostic_report(args.report, value)
+            except BaseException:
+                args.output.unlink(missing_ok=True)
+                args.report.unlink(missing_ok=True)
+                raise
+            print(f"created {args.output} and {args.report}")
         elif args.command == "plot":
             manifest = validate_run(args.run)
             plot_run(

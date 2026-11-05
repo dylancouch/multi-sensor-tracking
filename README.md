@@ -72,3 +72,7 @@ The results use three held-out seeds and include identity-switch failures in a c
 ![Synthetic sample trajectories, observations, and estimated tracks](examples/sample/plot.png)
 
 See [the evaluation protocol](docs/EVALUATION.md) for scoring definitions, benchmark methods, and limitations.
+
+## Diagnose a run
+
+`mst diagnose --run examples/sample --tracks examples/sample/tracks.jsonl --report output/sample-diagnostics.json --output output/sample-diagnostics.png` produces a per-time report and six-panel plot from a validated generated run. For recorded observations, supply `--observations`, a matching `--source` record, tracks, and optionally `--innovations`; truth-based panels remain unavailable without independent reference data. The [diagnostics report](examples/diagnostics/README.md) defines IDF1, includes hand-counted cases, reproduces generated and recorded evidence, and lists evaluated source coverage and gaps.
