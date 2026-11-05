@@ -8,6 +8,14 @@
 - Report arithmetic mean and spread across seeds, not only a showcase run. Include the scenario generation configuration and source revision in reports.
 - State the data source and reference quality for each result. Generated-fixture results do not establish performance on recorded or live data; results without suitable reference truth cannot report truth-based accuracy metrics.
 
+## Source records and evidence coverage
+
+For each new dataset or stream used for development, examples, or evaluation, maintain a source record alongside its import or generation recipe. Record the domain and use case; whether the origin is generated, recorded, or live; measurement type and sensor identity; sampling cadence, timestamp basis, ordering, and known gaps; coordinate frame, units, and any transforms; uncertainty representation and calibration assumptions; provenance, version, and integrity hash where available; reference-truth availability, quality, alignment, and permitted metrics; and license, consent or access basis, redistribution limits, and other permitted-use restrictions. Mark unknown fields explicitly. The record must not expose private data, credentials, or identifying details that cannot be published. If the source itself cannot be redistributed, keep the source record and a permitted import recipe without publishing the data.
+
+Maintain an evidence coverage matrix with one row per evaluated source and columns for domain, origin, measurement type, reference quality, supported metrics, evaluation split or seeds, and reproduction path. List unsupported or unevaluated combinations as gaps. An input adapter demonstrates compatibility with a format, not tracking accuracy on that source. A generated scenario with a new domain label does not establish cross-domain evidence.
+
+Predeclare source selection, splits or seeds, and metrics before comparisons. Report results per source and domain before any aggregate; pool only sources whose metric definitions, reference quality, and evaluation conditions are comparable, and state the weighting. Report truth-free diagnostics separately from reference-based accuracy. Claim generality only over the domains, measurement types, and source conditions actually evaluated. Use generated fixtures for controlled tests and recorded or live evidence for external validity when permitted and suitable; neither substitutes for the other.
+
 ## Core metrics
 
 1. Position RMSE in meters on matched states, with coverage (fraction of truth states matched) reported alongside it. RMSE alone can improve by discarding difficult tracks.
