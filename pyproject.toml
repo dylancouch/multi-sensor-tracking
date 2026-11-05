@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multi-sensor-tracking"
-version = "0.6.0"
+version = "0.7.0"
 description = "Multi-sensor tracking and estimation toolkit"
 readme = "README.md"
 license = "MIT"

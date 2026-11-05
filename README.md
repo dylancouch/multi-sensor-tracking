@@ -13,6 +13,8 @@ Multi-Sensor Tracking is a toolkit for estimating object trajectories from multi
 
 `pyproject.toml` defines installation metadata and runtime dependencies. `src/` contains the importable Python package. Packaging tools may create `build/` or `dist/`; those are disposable generated files.
 
+The GitHub source archive includes the public examples and evaluation guide for reproducing results. The wheel installs the `mst` CLI and library; use the source archive or a repository checkout for example scenarios and benchmark scripts.
+
 Inside `examples/`, `scenarios/` contains editable inputs, `benchmark/` keeps its protocol, reproduction code, report, and results together, and `sample/` is a small checked-in output. The many files inside `output/` are local run data and are ignored by Git.
 
 ## Run a demo

@@ -1,3 +1,6 @@
 prune tests
 prune .github
 include src/mst/inspection_template.html
+include docs/EVALUATION.md
+recursive-include examples *.py *.json *.jsonl *.md *.csv *.png
+global-exclude __pycache__ *.py[cod]
