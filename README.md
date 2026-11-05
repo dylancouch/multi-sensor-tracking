@@ -1,6 +1,6 @@
 # Multi-Sensor Tracking
 
-Multi-Sensor Tracking is a toolkit for estimating object trajectories from multiple observation streams and comparing tracking methods. It accepts timestamped position observations and can score estimates when reference trajectories are available. The current demo and checked-in benchmark generate their own observations; live sensor connections and data adapters are possible future additions.
+Multi-Sensor Tracking is a toolkit for estimating object trajectories from multiple observation streams and comparing tracking methods. It accepts timestamped position observations from generated examples, recorded CSV files, or live JSONL streams. It can score estimates when separate reference trajectories are available.
 
 ## Project map
 
@@ -26,15 +26,26 @@ python3 -m venv .venv
 .venv/bin/mst validate --run output/demo
 ```
 
-`output/demo` must be new. If it already exists, choose another name such as `output/demo-2`. The demo writes a manifest, separate `truth.jsonl` and `observations.jsonl`, `tracks.jsonl`, `metrics.json`, and `plot.png`. The tracker receives observations only; truth is read afterward for scoring and plotting. To use a different scenario:
+`output/demo` must be new. If it already exists, choose another name such as `output/demo-2`. The demo writes a manifest, separate `truth.jsonl` and `observations.jsonl`, `tracks.jsonl`, `innovations.jsonl`, `metrics.json`, and optionally `plot.png`. The tracker receives observations only; truth is read afterward for scoring and plotting. To use a different scenario:
 
 ```bash
 .venv/bin/mst simulate --config examples/scenarios/degraded.json --output output/degraded --seed 7
-.venv/bin/mst track --input output/degraded/observations.jsonl --output output/degraded/tracks.jsonl --method multi-kalman
-.venv/bin/mst evaluate --run output/degraded --tracks output/degraded/tracks.jsonl --output output/degraded/metrics.json
+.venv/bin/mst track --input output/degraded/observations.jsonl --output output/degraded/tracks.jsonl --innovations output/degraded/innovations.jsonl --method multi-kalman
+.venv/bin/mst evaluate --run output/degraded --tracks output/degraded/tracks.jsonl --innovations output/degraded/innovations.jsonl --output output/degraded/metrics.json
 ```
 
 `mst --help` lists all commands. `mst track` also supports `baseline` and `kalman` for the one-object scenario. It needs only an observation file, not the run manifest or truth file. Outputs are created exclusively, so commands do not silently replace files.
+
+## Use recorded or live observations
+
+For a recorded one-sensor CSV, use the exact header `timestamp_s,observation_id,x_m,y_m`. Coordinates must already be in the shared Cartesian `world` frame in meters; timestamps are nonnegative seconds and ordered. Supply the sensor ID and an explicit fixed isotropic position standard deviation in meters:
+
+```bash
+.venv/bin/mst ingest --format csv --input measurements.csv --output output/measurements.jsonl --source-label field_trial_1 --sensor-id camera_1 --position-std-m 0.5
+.venv/bin/mst track --input output/measurements.jsonl --output output/measurement-tracks.jsonl --innovations output/measurement-innovations.jsonl --method multi-kalman
+```
+
+For a live feed, omit `--input` and pipe version 1 observation JSONL to standard input: `sensor_program | .venv/bin/mst ingest --format jsonl --output output/live.jsonl --source-label stream_1`. The adapter validates and flushes each observation as it arrives, then writes `output/live.source.json` when the stream closes. The JSONL schema includes `sensor_id`, `observation_id`, `timestamp_s`, `position_m`, `covariance_m2`, `frame: "world"`, `time_unit: "s"`, and `schema_version: 1`; it rejects extra fields, including truth identities. Both adapters write a source manifest with assumptions, a user-supplied source label, record count, and output hash. Tracking starts from the completed observation file; online tracking and direct device-specific connectors are future work. Neither ingest nor tracking requires a truth file. Truth-based evaluation requires a separate validated reference run.
 
 ## Reproduce the benchmark
 

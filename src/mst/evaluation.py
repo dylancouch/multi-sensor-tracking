@@ -14,10 +14,12 @@ from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize import linear_sum_assignment
 
 from . import __version__
+from .innovations import Innovation
 from .provenance import environment_versions, source_state
 from .schema import (
     MAX_JSONL_BYTES,
     Manifest,
+    Observation,
     SchemaError,
     TrackEstimate,
     Truth,
@@ -52,7 +54,12 @@ def read_truth(path: Path) -> list[Truth]:
 
 
 def score(
-    truth: list[Truth], estimates: list[TrackEstimate], *, gate_m: float = 10.0
+    truth: list[Truth],
+    estimates: list[TrackEstimate],
+    *,
+    gate_m: float = 10.0,
+    innovations: list[Innovation] | None = None,
+    observations: list[Observation] | None = None,
 ) -> dict[str, Any]:
     """Match each truth frame to final live estimates at the exact same timestamp.
 
@@ -78,6 +85,41 @@ def score(
         final_estimate[(estimate_record.timestamp_s, estimate_record.track_id)] = (
             estimate_record
         )
+    nis_values: list[float] = []
+    nis_skipped = 0
+    observation_by_id = (
+        {item.observation_id: item for item in observations}
+        if observations is not None
+        else None
+    )
+    if observations is not None and len(observation_by_id or {}) != len(observations):
+        raise SchemaError("duplicate observation_id in evaluation observations")
+    if innovations is not None:
+        seen_observations: set[str] = set()
+        for item in innovations:
+            Innovation.from_dict(item.to_dict())
+            if item.observation_id in seen_observations:
+                raise SchemaError("duplicate innovation observation_id")
+            seen_observations.add(item.observation_id)
+            track = final_estimate.get((item.timestamp_s, item.track_id))
+            if track is None or track.method == "baseline":
+                raise SchemaError(
+                    "innovation does not reference a Kalman track at its timestamp"
+                )
+            if observation_by_id is not None:
+                source = observation_by_id.get(item.observation_id)
+                if (
+                    source is None
+                    or source.timestamp_s != item.timestamp_s
+                    or source.sensor_id != item.sensor_id
+                ):
+                    raise SchemaError(
+                        "innovation does not match its source observation"
+                    )
+            if item.nis is None:
+                nis_skipped += 1
+            else:
+                nis_values.append(item.nis)
     estimates_by_time: dict[float, list[TrackEstimate]] = defaultdict(list)
     unscored = 0
     for (time, _track_id), estimate_record in final_estimate.items():
@@ -151,7 +193,7 @@ def score(
 
     matched = len(radial_errors)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "matching_gate_m": gate_m,
         "truth_states": len(truth),
         "matched_states": matched,
@@ -170,8 +212,18 @@ def score(
         "nees_samples": len(nees),
         "nees_skipped_singular": nees_skipped,
         "nees_unavailable_baseline": nees_unavailable,
-        "nis_mean": None,
-        "nis_reason": "innovation statistics are not persisted in version 1 track records",
+        "nis_mean": statistics.fmean(nis_values) if nis_values else None,
+        "nis_samples": len(nis_values),
+        "nis_skipped_singular": nis_skipped,
+        "nis_reason": (
+            "innovation artifact not supplied"
+            if innovations is None
+            else "no Kalman updates"
+            if not innovations
+            else None
+        ),
+        "mota": 1 - (unmatched_truth + unmatched_estimates + switches) / len(truth),
+        "motp_m": statistics.fmean(radial_errors) if radial_errors else None,
     }
 
 
@@ -183,6 +235,9 @@ def report(
     *,
     gate_m: float = 10.0,
     evaluation_wall_s: float | None = None,
+    innovations: list[Innovation] | None = None,
+    innovation_bytes: bytes | None = None,
+    observations: list[Observation] | None = None,
 ) -> dict[str, Any]:
     methods = sorted({item.method for item in estimates})
     configs = sorted({item.config_id for item in estimates})
@@ -190,9 +245,17 @@ def report(
         raise SchemaError(
             "one evaluation report requires one tracker method and config"
         )
-    metrics = score(truth, estimates, gate_m=gate_m)
+    if (innovations is None) != (innovation_bytes is None):
+        raise SchemaError("innovations and innovation_bytes must be supplied together")
+    metrics = score(
+        truth,
+        estimates,
+        gate_m=gate_m,
+        innovations=innovations,
+        observations=observations,
+    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark_version": __version__,
         "generator_version": manifest.generator_version,
         "seed": manifest.seed,
@@ -200,6 +263,9 @@ def report(
             canonical_json(manifest.scenario.to_dict()).encode()
         ).hexdigest(),
         "track_sha256": hashlib.sha256(track_bytes).hexdigest(),
+        "innovation_sha256": hashlib.sha256(innovation_bytes).hexdigest()
+        if innovation_bytes is not None
+        else None,
         "observation_sha256": manifest.sha256["observations"],
         "source": source_state(),
         "method": methods[0] if methods else None,

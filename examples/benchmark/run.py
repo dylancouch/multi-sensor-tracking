@@ -17,6 +17,7 @@ from mst import __version__
 from mst.artifacts import create_run
 from mst.association import track_multiple_objects
 from mst.evaluation import read_truth, report
+from mst.innovations import write_innovations
 from mst.observation_io import read_observations, write_tracks
 from mst.schema import Scenario, SchemaError, canonical_json, read_json
 from mst.tracking import track_single_object
@@ -143,6 +144,7 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                 truth = read_truth(run_dir / "truth.jsonl")
                 for method in methods:
                     start = time.perf_counter()
+                    innovations = [] if method != "baseline" else None
                     if method == "multi-kalman":
                         estimates = track_multiple_objects(
                             observations,
@@ -153,6 +155,7 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                             gate_squared=tracker["gate_squared"],
                             min_hits=tracker["min_hits"],
                             max_missed=tracker["max_missed"],
+                            innovations=innovations,
                         )
                     else:
                         estimates = track_single_object(
@@ -162,9 +165,13 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                             initial_velocity_std_mps=tracker[
                                 "initial_velocity_std_mps"
                             ],
+                            innovations=innovations,
                         )
                     track_path = Path(temp) / f"{method}.jsonl"
                     write_tracks(track_path, estimates)
+                    innovation_path = Path(temp) / f"{method}-innovations.jsonl"
+                    if innovations is not None:
+                        write_innovations(innovation_path, innovations)
                     tracking_s = time.perf_counter() - start
                     start = time.perf_counter()
                     value = report(
@@ -173,6 +180,11 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                         estimates,
                         track_path.read_bytes(),
                         gate_m=gate_m,
+                        innovations=innovations,
+                        innovation_bytes=innovation_path.read_bytes()
+                        if innovations is not None
+                        else None,
+                        observations=observations,
                     )
                     evaluation_s = time.perf_counter() - start
                     value["runtime"] = {
@@ -205,6 +217,9 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
                     [item["unmatched_estimate_states"] for item in metrics]
                 ),
                 "nees_mean": _stats([item["nees_mean"] for item in metrics]),
+                "nis_mean": _stats([item["nis_mean"] for item in metrics]),
+                "mota": _stats([item["mota"] for item in metrics]),
+                "motp_m": _stats([item["motp_m"] for item in metrics]),
                 "simulation_wall_s": _stats(
                     [item["runtime"]["simulation_wall_s"] for item in values]
                 ),
@@ -217,7 +232,7 @@ def run_protocol(protocol: dict[str, Any]) -> dict[str, Any]:
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark_version": __version__,
         "protocol_sha256": hashlib.sha256(
             canonical_json(protocol).encode()
@@ -245,7 +260,7 @@ def markdown_summary(value: dict[str, Any]) -> str:
         "",
         f"Protocol SHA-256: `{value['protocol_sha256']}`. Seeds: {', '.join(map(str, value['seeds']))}.",
         "",
-        "Values show arithmetic mean ± sample standard deviation across seeds. RMSE is conditional on matched states; coverage and unmatched counts must be read alongside it. Runtime includes artifact writing for simulation and tracking, and report construction for evaluation. NIS is unavailable because innovation statistics are not persisted. These synthetic results do not establish field performance.",
+        "Values show arithmetic mean ± sample standard deviation across seeds. RMSE and MOTP are conditional on matched states; coverage and unmatched counts must be read alongside them. NIS uses saved Kalman update innovations and is unavailable for the baseline. Runtime includes artifact writing for simulation and tracking, and report construction for evaluation. These generated-fixture results do not establish field performance.",
         "",
         "| Case | Method | n | RMSE (m) | Coverage | ID switches | Unmatched truth | Unmatched estimates |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",

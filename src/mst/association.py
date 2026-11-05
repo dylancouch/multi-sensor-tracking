@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 
+from .innovations import Innovation
 from .schema import VERSION, Observation, SchemaError, TrackEstimate, canonical_json
 from .tracking import H, _kalman_update, process_covariance, transition
 
@@ -75,6 +76,7 @@ def track_multiple_objects(
     gate_squared: float = 9.21,
     min_hits: int = 2,
     max_missed: int = 2,
+    innovations: list[Innovation] | None = None,
 ) -> list[TrackEstimate]:
     """Assign per sensor and timestamp with a global minimum-cost matching.
 
@@ -156,7 +158,11 @@ def track_multiple_objects(
                     track = candidates[row]
                     observation = sensor_observations[column]
                     track.state, track.covariance = _kalman_update(
-                        track.state, track.covariance, observation
+                        track.state,
+                        track.covariance,
+                        observation,
+                        track_id=track.track_id,
+                        innovations=innovations,
                     )
                     track.hits += 1
                     matched_ids.add(track.track_id)

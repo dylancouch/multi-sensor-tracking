@@ -1,4 +1,4 @@
-"""Command-line interface for synthetic run generation and validation."""
+"""Command-line interface for ingestion, tracking, and evaluation."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from . import __version__
 from .artifacts import create_run, validate_run
 from .association import track_multiple_objects
 from .evaluation import read_truth, report, write_report
+from .ingest import ingest
+from .innovations import read_innovations, write_innovations
 from .observation_io import read_observations, read_tracks, write_tracks
 from .schema import Scenario, SchemaError, read_json
 from .tracking import track_single_object
@@ -61,7 +63,7 @@ def _default_scenario() -> Scenario:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mst", description="Synthetic civilian tracking benchmark"
+        prog="mst", description="Multi-sensor tracking and evaluation toolkit"
     )
     parser.add_argument("--version", action="version", version=f"mst {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -84,9 +86,27 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--seed", type=_seed, default=7)
     validate = commands.add_parser("validate", help="validate run artifacts and hashes")
     validate.add_argument("--run", required=True, type=Path, help="run directory")
+    ingestion = commands.add_parser(
+        "ingest", help="normalize recorded CSV or live JSONL from stdin"
+    )
+    ingestion.add_argument(
+        "--input", type=Path, help="recorded input file; omit for live stdin"
+    )
+    ingestion.add_argument(
+        "--output", required=True, type=Path, help="new observations JSONL"
+    )
+    ingestion.add_argument("--format", choices=("csv", "jsonl"), required=True)
+    ingestion.add_argument(
+        "--source-label", required=True, help="source provenance identifier"
+    )
+    ingestion.add_argument("--sensor-id", help="CSV sensor identifier")
+    ingestion.add_argument(
+        "--position-std-m", type=float, help="CSV isotropic position standard deviation"
+    )
     track = commands.add_parser("track", help="track one object from observations only")
     track.add_argument("--input", required=True, type=Path, help="observations.jsonl")
     track.add_argument("--output", required=True, type=Path, help="new tracks.jsonl")
+    track.add_argument("--innovations", type=Path, help="new Kalman innovations JSONL")
     track.add_argument(
         "--method", choices=("baseline", "kalman", "multi-kalman"), required=True
     )
@@ -122,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--tracks", required=True, type=Path, help="track estimate JSONL"
     )
+    evaluate.add_argument("--innovations", type=Path, help="matching innovations JSONL")
     evaluate.add_argument(
         "--output", required=True, type=Path, help="new metrics JSON file"
     )
@@ -150,11 +171,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "validate-tracks":
             records = read_tracks(args.input)
             print(f"valid tracks: {len(records)} estimates")
+        elif args.command == "ingest":
+            count, source_path = ingest(
+                args.input,
+                args.output,
+                format=args.format,
+                source_label=args.source_label,
+                sensor_id=args.sensor_id,
+                position_std_m=args.position_std_m,
+            )
+            print(f"created {args.output}: {count} observations; source {source_path}")
         elif args.command == "evaluate":
             start = time.perf_counter()
             manifest = validate_run(args.run)
             truth = read_truth(args.run / manifest.artifacts["truth"])
             tracks = read_tracks(args.tracks)
+            innovations = (
+                read_innovations(args.innovations) if args.innovations else None
+            )
             value = report(
                 manifest,
                 truth,
@@ -162,6 +196,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.tracks.read_bytes(),
                 gate_m=args.gate_m,
                 evaluation_wall_s=time.perf_counter() - start,
+                innovations=innovations,
+                innovation_bytes=args.innovations.read_bytes()
+                if args.innovations
+                else None,
+                observations=read_observations(
+                    args.run / manifest.artifacts["observations"]
+                ),
             )
             write_report(args.output, value)
             metrics = value["metrics"]
@@ -179,6 +220,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"created {args.output}")
         elif args.command == "track":
             observations = read_observations(args.input)
+            if args.method == "baseline" and args.innovations:
+                raise SchemaError("baseline has no Kalman innovations")
+            if args.innovations and (args.output.exists() or args.innovations.exists()):
+                raise FileExistsError("track or innovation output already exists")
+            innovations = [] if args.innovations else None
             if args.method == "multi-kalman":
                 records = track_multiple_objects(
                     observations,
@@ -187,6 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     gate_squared=args.gate_squared,
                     min_hits=args.min_hits,
                     max_missed=args.max_missed,
+                    innovations=innovations,
                 )
             else:
                 records = track_single_object(
@@ -194,8 +241,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.method,
                     acceleration_std_mps2=args.acceleration_std,
                     initial_velocity_std_mps=args.initial_velocity_std,
+                    innovations=innovations,
                 )
             write_tracks(args.output, records)
+            if args.innovations:
+                try:
+                    write_innovations(args.innovations, innovations or [])
+                except Exception:
+                    args.output.unlink(missing_ok=True)
+                    raise
             print(f"created {args.output}: {len(records)} estimates")
         else:
             scenario = (
@@ -219,13 +273,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.output / manifest.artifacts["observations"]
                 )
                 tracking_start = time.perf_counter()
-                tracks = track_multiple_objects(observations)
+                innovations = []
+                tracks = track_multiple_objects(observations, innovations=innovations)
                 track_path = args.output / "tracks.jsonl"
                 write_tracks(track_path, tracks)
+                innovation_path = args.output / "innovations.jsonl"
+                write_innovations(innovation_path, innovations)
                 tracking_wall_s = time.perf_counter() - tracking_start
                 truth = read_truth(args.output / manifest.artifacts["truth"])
                 evaluation_start = time.perf_counter()
-                value = report(manifest, truth, tracks, track_path.read_bytes())
+                value = report(
+                    manifest,
+                    truth,
+                    tracks,
+                    track_path.read_bytes(),
+                    innovations=innovations,
+                    innovation_bytes=innovation_path.read_bytes(),
+                    observations=observations,
+                )
                 evaluation_wall_s = time.perf_counter() - evaluation_start
                 value["runtime"] = {
                     "simulation_wall_s": simulation_wall_s,

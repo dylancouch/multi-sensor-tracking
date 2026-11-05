@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.linalg import cho_factor, cho_solve
 
+from .innovations import Innovation, make_innovation
 from .schema import VERSION, Observation, SchemaError, TrackEstimate, canonical_json
 
 FloatArray = NDArray[np.float64]
@@ -78,12 +79,28 @@ def _estimate(
 
 
 def _kalman_update(
-    state: FloatArray, covariance: FloatArray, observation: Observation
+    state: FloatArray,
+    covariance: FloatArray,
+    observation: Observation,
+    *,
+    track_id: str = "track-0001",
+    innovations: list[Innovation] | None = None,
 ) -> tuple[FloatArray, FloatArray]:
     z: FloatArray = np.asarray(observation.position_m, dtype=float)
     r: FloatArray = np.asarray(observation.covariance_m2, dtype=float)
     innovation = z - H @ state
     s = H @ covariance @ H.T + r
+    if innovations is not None:
+        innovations.append(
+            make_innovation(
+                observation.timestamp_s,
+                track_id,
+                observation.observation_id,
+                observation.sensor_id,
+                innovation,
+                s,
+            )
+        )
     cross = covariance @ H.T
     try:
         factor, lower = cho_factor(s, lower=True, check_finite=True)
@@ -120,6 +137,7 @@ def track_single_object(
     *,
     acceleration_std_mps2: float = 1.0,
     initial_velocity_std_mps: float = 10.0,
+    innovations: list[Innovation] | None = None,
 ) -> list[TrackEstimate]:
     """Track one object; reject repeated sensor/time pairs as ambiguous."""
     if method not in ("baseline", "kalman"):
@@ -164,7 +182,9 @@ def track_single_object(
             covariance = f @ covariance @ f.T + process_covariance(
                 dt, acceleration_std_mps2
             )
-            state, covariance = _kalman_update(state, covariance, observation)
+            state, covariance = _kalman_update(
+                state, covariance, observation, innovations=innovations
+            )
         else:
             z: FloatArray = np.asarray(observation.position_m, dtype=float)
             r: FloatArray = np.asarray(observation.covariance_m2, dtype=float)
