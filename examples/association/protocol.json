@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "question": "Does a velocity-direction continuity cost reduce identity switches at crossings without worsening routine or degraded tracking?",
+  "development_seeds": [7, 8, 9],
+  "held_out_seeds": [201, 202, 203, 204, 205],
+  "matching_gate_m": 10.0,
+  "tracker": {
+    "acceleration_std_mps2": 1.0,
+    "initial_velocity_std_mps": 10.0,
+    "gate_squared": 9.21,
+    "min_hits": 2,
+    "max_missed": 2
+  },
+  "variant": {"direction_weight": 4.0},
+  "generated_cases": [
+    {"name": "crossing", "config": "crossing.json"},
+    {"name": "routine", "config": "demo.json"},
+    {"name": "degraded", "config": "degraded.json"}
+  ],
+  "recorded_source": "examples/recorded/laura-2020.jsonl",
+  "primary_metric": "crossing ID switches; lower is better",
+  "secondary_metrics": ["coverage", "position_rmse_m", "unmatched_truth", "unmatched_estimates", "nees_mean", "nis_mean", "tracking_wall_s"],
+  "recorded_metrics": ["births", "matches", "confirmed_tracks", "track_count", "nis_mean", "tracking_wall_s"],
+  "comparison_policy": "Same observations for both trackers; report every seed and per-source mean and sample standard deviation. Recorded source has no independent truth, so omit truth-based accuracy and identity metrics. Runtime is descriptive, not deterministic."
+}

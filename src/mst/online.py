@@ -81,6 +81,7 @@ class OnlineTracker:
         max_records: int = 100_000,
         max_live_tracks: int = 2048,
         expected_interval_s: float | None = None,
+        direction_weight: float = 0.0,
     ) -> None:
         if not math.isfinite(max_lateness_s) or max_lateness_s < 0:
             raise SchemaError("max_lateness_s must be finite and nonnegative")
@@ -98,6 +99,9 @@ class OnlineTracker:
         self.max_records = max_records
         self.max_live_tracks = max_live_tracks
         self.expected_interval_s = expected_interval_s
+        if not math.isfinite(direction_weight) or not 0 <= direction_weight <= 1e9:
+            raise SchemaError("direction_weight must be finite and in [0, 1e9]")
+        self.direction_weight = direction_weight
         self.state = AssociationState()
         self.pending: list[tuple[float, str, str, Observation]] = []
         self.pending_ids: set[str] = set()
@@ -178,6 +182,7 @@ class OnlineTracker:
                 epoch,
                 _state=self.state,
                 _max_live_tracks=self.max_live_tracks,
+                direction_weight=self.direction_weight,
             )
             self.processed += len(epoch)
             self.emitted_estimates += len(estimates)
@@ -215,6 +220,7 @@ class OnlineTracker:
             "max_records": self.max_records,
             "max_live_tracks": self.max_live_tracks,
             "expected_interval_s": self.expected_interval_s,
+            "direction_weight": self.direction_weight,
         }
 
 
@@ -228,6 +234,7 @@ def track_stream(
     max_records: int = 100_000,
     max_live_tracks: int = 2048,
     expected_interval_s: float | None = None,
+    direction_weight: float = 0.0,
     input_stream: TextIO | None = None,
 ) -> tuple[int, Path]:
     """Write and flush estimates per completed epoch; no reference data is read."""
@@ -246,6 +253,7 @@ def track_stream(
         max_records=max_records,
         max_live_tracks=max_live_tracks,
         expected_interval_s=expected_interval_s,
+        direction_weight=direction_weight,
     )
     stream = (
         input_path.open("r", encoding="utf-8")

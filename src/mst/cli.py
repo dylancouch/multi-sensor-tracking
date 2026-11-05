@@ -134,6 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="squared Mahalanobis gate for multi-kalman",
     )
     track.add_argument(
+        "--direction-weight",
+        type=float,
+        default=0.0,
+        help="velocity-direction association cost; 0 preserves the baseline",
+    )
+    track.add_argument(
         "--min-hits", type=int, default=2, help="hits to confirm a multi-object track"
     )
     track.add_argument(
@@ -154,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     stream_track.add_argument("--max-records", type=int, default=100_000)
     stream_track.add_argument("--max-live-tracks", type=int, default=2048)
     stream_track.add_argument("--expected-interval-s", type=float)
+    stream_track.add_argument("--direction-weight", type=float, default=0.0)
     validate_tracks = commands.add_parser(
         "validate-tracks", help="validate track estimate JSONL"
     )
@@ -231,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_records=args.max_records,
                 max_live_tracks=args.max_live_tracks,
                 expected_interval_s=args.expected_interval_s,
+                direction_weight=args.direction_weight,
             )
             print(f"created {args.output}: {count} estimates; stream {summary_path}")
         elif args.command == "evaluate":
@@ -310,6 +318,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     gate_squared=args.gate_squared,
                     min_hits=args.min_hits,
                     max_missed=args.max_missed,
+                    direction_weight=args.direction_weight,
                     innovations=innovations,
                     events=events,
                 )

@@ -28,6 +28,8 @@ class _Track:
     hits: int = 1
     missed: int = 0
     confirmed: bool = False
+    last_position_m: tuple[float, ...] | None = None
+    last_observation_time_s: float | None = None
 
 
 @dataclass
@@ -62,7 +64,32 @@ def _new_track(observation: Observation, serial: int, velocity_std: float) -> _T
     covariance: FloatArray = np.zeros((4, 4))
     covariance[:2, :2] = np.asarray(observation.covariance_m2)
     covariance[2:, 2:] = np.eye(2) * velocity_std**2
-    return _Track(f"track-{serial:04d}", state, covariance, observation.timestamp_s)
+    return _Track(
+        f"track-{serial:04d}",
+        state,
+        covariance,
+        observation.timestamp_s,
+        last_position_m=observation.position_m,
+        last_observation_time_s=observation.timestamp_s,
+    )
+
+
+def _direction_penalty(track: _Track, observation: Observation) -> float:
+    """Bounded reversal cost from the track's own prior velocity and observation."""
+    if track.last_position_m is None or track.last_observation_time_s is None:
+        return 0.0
+    if observation.timestamp_s <= track.last_observation_time_s:
+        return 0.0
+    displacement = np.asarray(observation.position_m) - np.asarray(
+        track.last_position_m
+    )
+    velocity = track.state[2:]
+    distance = float(np.linalg.norm(displacement))
+    speed = float(np.linalg.norm(velocity))
+    if distance < 0.2 or speed < 0.2:
+        return 0.0
+    cosine = float(np.dot(displacement, velocity) / (distance * speed))
+    return (1.0 - max(-1.0, min(1.0, cosine))) / 2.0
 
 
 def _estimate(track: _Track, lifecycle: str, config_id: str) -> TrackEstimate:
@@ -90,6 +117,7 @@ def track_multiple_objects(
     gate_squared: float = 9.21,
     min_hits: int = 2,
     max_missed: int = 2,
+    direction_weight: float = 0.0,
     innovations: list[Innovation] | None = None,
     events: list[AssociationEvent] | None = None,
     _state: AssociationState | None = None,
@@ -106,6 +134,8 @@ def track_multiple_objects(
         raise SchemaError("initial_velocity_std_mps must be finite and positive")
     if not math.isfinite(gate_squared) or not 0 < gate_squared <= 1e9:
         raise SchemaError("gate_squared must be finite and in (0, 1e9]")
+    if not math.isfinite(direction_weight) or not 0 <= direction_weight <= 1e9:
+        raise SchemaError("direction_weight must be finite and in [0, 1e9]")
     if (
         type(min_hits) is not int
         or min_hits < 1
@@ -135,6 +165,8 @@ def track_multiple_objects(
         "min_hits": min_hits,
         "max_missed": max_missed,
     }
+    if direction_weight:
+        config["direction_weight"] = direction_weight
     config_id = (
         "cfg-" + hashlib.sha256(canonical_json(config).encode()).hexdigest()[:16]
     )
@@ -176,7 +208,25 @@ def track_multiple_objects(
                 invalid_cost = (
                     max(len(candidates), len(sensor_observations)) + 1
                 ) * gate_squared + 1
-                finite_costs = np.where(costs <= gate_squared, costs, invalid_cost)
+                if direction_weight:
+                    penalties = np.array(
+                        [
+                            [
+                                _direction_penalty(track, item)
+                                for item in sensor_observations
+                            ]
+                            for track in candidates
+                        ]
+                    )
+                    invalid_cost = (
+                        max(len(candidates), len(sensor_observations)) + 1
+                    ) * (gate_squared + direction_weight) + 1
+                    assignment_costs = costs + direction_weight * penalties
+                else:
+                    assignment_costs = costs
+                finite_costs = np.where(
+                    costs <= gate_squared, assignment_costs, invalid_cost
+                )
                 rows, columns = linear_sum_assignment(finite_costs)
                 accepted: set[tuple[int, int]] = set()
                 for row, column in zip(rows, columns, strict=True):
@@ -191,6 +241,12 @@ def track_multiple_objects(
                         track_id=track.track_id,
                         innovations=innovations,
                     )
+                    if (
+                        track.last_observation_time_s is None
+                        or observation.timestamp_s > track.last_observation_time_s
+                    ):
+                        track.last_position_m = observation.position_m
+                        track.last_observation_time_s = observation.timestamp_s
                     track.hits += 1
                     matched_ids.add(track.track_id)
                     matched_observations.add(int(column))

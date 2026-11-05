@@ -33,6 +33,8 @@ The scorer reports CLEAR MOT MOTA and MOTP under the exact-time, 2D distance-gat
 
 ## Benchmarks
 
+The [association crossing comparison](../examples/association/README.md) keeps a separate frozen protocol and reports a negative held-out result for an opt-in direction-cost variant. Its recorded Laura diagnostics contain no truth-based identity or accuracy measurements. The near-coincident crossing positions also make exact-time, distance-only reference identity assignment ambiguous; interpret ID-switch counts with that limitation.
+
 - **Sanity:** no noise, one object, known constant velocity and aligned observations. Check reconstructed positions, covariance behavior and units.
 - **Routine:** two or more objects, two independent position sensors, configurable independent noise and timing.
 - **Crossing:** two objects cross paths without sharing identities; explicitly quantify any ID switches.

@@ -37,6 +37,8 @@ python3 -m venv .venv
 
 `mst --help` lists all commands. `mst track` also supports `baseline` and `kalman` for the one-object scenario. It needs only an observation file, not the run manifest or truth file. Outputs are created exclusively, so commands do not silently replace files.
 
+`mst track` and `mst track-stream` accept `--direction-weight` for an experimental velocity-direction association cost. It defaults to zero, preserving the existing tracker. The [association comparison](examples/association/README.md) found no held-out crossing benefit and a degraded-case regression at weight 4, so this option should not be treated as a validated improvement.
+
 `mst inspect` needs only observation and track files. Its `--events` and `--innovations` inputs are optional; omit them when unavailable. Pass `--truth PATH/TO/truth.jsonl` to add an initially hidden reference overlay, position-error chart, and reference-based ID-switch events. Those are computed for viewing after tracking with exact-time, distance-gated matching (default 10 m). They do not enter the tracker. The HTML file is self-contained and requires no server or plotting extra; its contents include the supplied observations, tracks, and optional reference data, so handle reports from sensitive sources according to their data permissions. Static PNG/SVG plots remain available through `mst plot` for generated runs.
 
 ## Use recorded or live observations
