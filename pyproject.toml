@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75,<81"]
+requires = ["setuptools>=84.1,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,6 +11,11 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2"]
+
+[project.urls]
+Homepage = "https://github.com/dylancouch/multi-sensor-tracking"
+Repository = "https://github.com/dylancouch/multi-sensor-tracking"
+Issues = "https://github.com/dylancouch/multi-sensor-tracking/issues"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.10,<4"]
