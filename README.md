@@ -2,28 +2,45 @@
 
 Multi-Sensor Tracking is a toolkit for estimating object trajectories from multiple observation streams and comparing tracking methods. It accepts timestamped position observations from generated examples, recorded CSV files, or live JSONL streams. It can score estimates when separate reference trajectories are available.
 
-## Project map
+## What you can do
 
-| Path | What belongs there |
+| Task | Where to start |
 | --- | --- |
-| `src/mst/` | Installable Python application package: simulation, sensors, trackers, scoring, plots, and CLI. |
-| `examples/` | Scenarios to run, a frozen benchmark with measured results, and a small checked-in sample. |
-| `docs/EVALUATION.md` | Metric definitions, scoring conventions, benchmark protocol, and limitations. |
-| `output/` | Your generated runs; generated files stay local. |
+| Generate and track a scenario | [Run a demo](#run-a-demo) to create observations, tracks, metrics, and an interactive HTML timeline. |
+| Use your own observations | [Import recorded CSV or live JSONL](#use-recorded-or-live-observations), then track them. |
+| Process an incoming stream | [Track a stream as it arrives](#track-a-stream-as-it-arrives) with bounded lateness and resource limits. |
+| Inspect and compare results | [Diagnose a run](#diagnose-a-run) or [reproduce the benchmark](#reproduce-the-benchmark). |
 
-`pyproject.toml` defines installation metadata and runtime dependencies. `src/` contains the importable Python package. Packaging tools may create `build/` or `dist/`; those are disposable generated files.
+The current tracker uses two-dimensional Cartesian position observations. Generated scenarios have separate reference truth for scoring; the included recorded examples do not have independent reference truth, so they support processing and diagnostic checks rather than accuracy claims.
 
-The GitHub source archive includes the public examples and evaluation guide for reproducing results. The wheel installs the `mst` CLI and library; use the source archive or a repository checkout for example scenarios and benchmark scripts.
+## Requirements and installation
 
-Inside `examples/`, `scenarios/` contains editable inputs, `benchmark/` keeps its protocol, reproduction code, report, and results together, and `sample/` is a small checked-in output. The many files inside `output/` are local run data and are ignored by Git.
+Use Python 3.11 or newer. The core CLI runs on a CPU; Matplotlib is optional for PNG/SVG plots. The commands below use a Python virtual environment on Linux or macOS.
 
-## Run a demo
+For the demo, scenarios, and benchmark scripts, clone the repository and install the plotting extra from its root:
 
-Use Python 3.11 or newer. From the repository root:
+```bash
+git clone https://github.com/dylancouch/multi-sensor-tracking.git
+cd multi-sensor-tracking
+python3 -m venv .venv
+.venv/bin/python -m pip install '.[plot]'
+```
+
+If you only need the CLI and Python library, download the wheel from the [latest GitHub release](https://github.com/dylancouch/multi-sensor-tracking/releases/latest) and install that file in a virtual environment. For the current release:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install '.[plot]'
+.venv/bin/python -m pip install ./multi_sensor_tracking-0.7.0-py3-none-any.whl
+.venv/bin/mst --help
+```
+
+The wheel includes the self-contained HTML inspection view but not the example scenarios or benchmark scripts. Use the repository checkout or the release's Python source package for those files. Plot commands require the optional `plot` extra.
+
+## Run a demo
+
+From the installed repository checkout:
+
+```bash
 .venv/bin/mst demo --output output/demo --seed 7 --plot
 .venv/bin/mst validate --run output/demo
 ```
@@ -73,8 +90,19 @@ The results use three held-out seeds and include identity-switch failures in a c
 
 ![Synthetic sample trajectories, observations, and estimated tracks](examples/sample/plot.png)
 
-See [the evaluation protocol](docs/EVALUATION.md) for scoring definitions, benchmark methods, and limitations.
-
 ## Diagnose a run
 
 `mst diagnose --run examples/sample --tracks examples/sample/tracks.jsonl --report output/sample-diagnostics.json --output output/sample-diagnostics.png` produces a per-time report and six-panel plot from a validated generated run. For recorded observations, supply `--observations`, a matching `--source` record, tracks, and optionally `--innovations`; truth-based panels remain unavailable without independent reference data. The [diagnostic evaluation guide](examples/diagnostics/README.md) defines IDF1, includes hand-counted cases, reproduces generated and recorded evidence, and lists evaluated source coverage and gaps.
+
+## Project map
+
+| Path | What belongs there |
+| --- | --- |
+| `src/mst/` | Installable Python application package: simulation, sensors, trackers, scoring, plots, and CLI. |
+| `examples/` | Scenarios to run, a frozen benchmark with measured results, and a small checked-in sample. |
+| `docs/EVALUATION.md` | Metric definitions, scoring conventions, benchmark protocol, and limitations. |
+| `output/` | Your generated runs; generated files stay local. |
+
+`pyproject.toml` defines installation metadata and runtime dependencies. `src/` contains the importable Python package. Packaging tools may create `build/` or `dist/`; those are disposable generated files.
+
+Inside `examples/`, `scenarios/` contains editable inputs, `benchmark/` keeps its protocol, reproduction code, report, and results together, and `sample/` is a small checked-in output. The many files inside `output/` are local run data and are ignored by Git.
